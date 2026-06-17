@@ -1,0 +1,814 @@
+<template>
+  <div class="page-shell assistant-page">
+    <section class="page-hero assistant-hero">
+      <div class="page-hero__content">
+        <span class="page-hero__eyebrow">AIS Copilot</span>
+        <h2>像聊天一样提问，我会分析船舶态势。</h2>
+        <p>
+          你可以直接问船舶档案、AIS 动态、航运节点变化或航线态势问题。我会先参考系统数据和知识库证据，再用自然语言把答案讲清楚。
+        </p>
+        <div class="page-hero__actions">
+          <el-button type="primary" @click="applyPrompt(quickPrompts[0])">试一个示例问题</el-button>
+          <el-button type="primary" plain @click="applyPrompt(quickPrompts[1])">切换到趋势类问题</el-button>
+        </div>
+      </div>
+
+      <div class="assistant-hero__window">
+        <div class="assistant-hero__badge">
+          <span>本地数据优先</span>
+          <strong>{{ lastResponse?.cacheHit ? '缓存命中，重复问题会更快' : '实时检索，再自然回答' }}</strong>
+        </div>
+        <div class="assistant-hero__feature-grid">
+          <article class="assistant-hero__feature">
+            <span>适合问</span>
+            <strong>船舶档案、地点、时间、风险等级与趋势</strong>
+          </article>
+          <article class="assistant-hero__feature">
+            <span>识别能力</span>
+            <strong>支持模糊地名、航运节点和航线别名</strong>
+          </article>
+          <article class="assistant-hero__feature">
+            <span>回答方式</span>
+            <strong>自然回答 + 数据证据 + 可继续追问</strong>
+          </article>
+        </div>
+        <div class="assistant-hero__preview">
+          <span>建议这样提问</span>
+          <strong>{{ quickPrompts[0] }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="assistant-story-grid">
+      <article class="assistant-story-card">
+        <span>它最擅长的事</span>
+          <strong>把 AIS 线索查出来，再像聊天一样讲明白</strong>
+          <p>你问“昨晚哪些船舶异常减速”或“湛江港附近有哪些高风险目标”，它会先找证据，再给你一段能读懂的回答。</p>
+      </article>
+      <article class="assistant-story-card">
+        <span>提问建议</span>
+        <strong>地点、时间、对象越清楚，结果越稳定</strong>
+          <p>随便问也可以；如果带上地名、时间范围、航运节点或风险等级，答案会更具体。</p>
+      </article>
+      <article class="assistant-story-card">
+        <span>当前状态</span>
+        <strong>{{ lastResponse?.cacheHit ? '当前结果来自缓存' : '当前结果为实时生成' }}</strong>
+        <p>{{ lastResponse ? '解析结果和证据线索会同步显示在右侧，便于你继续追问。' : '当你提出第一个问题后，这里会显示本次分析的即时状态。' }}</p>
+      </article>
+    </section>
+
+    <div class="assistant-grid">
+      <el-card class="panel-card assistant-workbench" shadow="never">
+        <template #header>
+          <div class="assistant-header">
+            <div>
+            <strong>对话区</strong>
+            <p>不用按系统字段提问，像平常聊天一样问就行。</p>
+            </div>
+            <div class="assistant-header__actions">
+              <span>{{ messages.length }} 条消息</span>
+              <el-tooltip content="刷新历史记录" placement="top">
+                <el-button circle :icon="Refresh" :loading="loadingHistory" @click="loadHistory()" />
+              </el-tooltip>
+              <el-tooltip content="清空当前账号的对话记录" placement="top">
+                <el-button circle :icon="Delete" :disabled="loading || loadingHistory" @click="clearHistory()" />
+              </el-tooltip>
+            </div>
+          </div>
+        </template>
+
+        <div ref="messagesContainerRef" v-loading="loadingHistory" class="assistant-messages" element-loading-text="加载历史记录...">
+          <div
+            v-for="(item, index) in messages"
+            :key="`${item.role}-${index}`"
+            class="assistant-message"
+            :class="item.role === 'user' ? 'assistant-message--user' : 'assistant-message--assistant'"
+          >
+            <div class="assistant-message__meta">
+              <span>{{ item.role === 'user' ? '你' : '智能分析助手' }}</span>
+            </div>
+            <div class="assistant-message__content">{{ item.content }}</div>
+          </div>
+
+        </div>
+
+        <div class="assistant-composer">
+          <el-input
+            v-model="input"
+            type="textarea"
+            :rows="4"
+            resize="none"
+            placeholder="例如：昨晚湛江港附近有哪些船舶异常减速？"
+            @keydown.ctrl.enter.prevent="sendMessage()"
+          />
+          <div class="assistant-composer__actions">
+            <span>按 `Ctrl + Enter` 发送</span>
+            <el-button type="primary" :loading="loading" @click="sendMessage()">发送提问</el-button>
+          </div>
+        </div>
+      </el-card>
+
+      <div class="assistant-side">
+        <el-card class="panel-card" shadow="never">
+          <template #header>
+            <strong>快捷问题</strong>
+          </template>
+          <div class="prompt-list">
+            <button
+              v-for="prompt in quickPrompts"
+              :key="prompt"
+              class="prompt-chip"
+              type="button"
+              @click="applyPrompt(prompt)"
+            >
+              {{ prompt }}
+            </button>
+          </div>
+        </el-card>
+
+        <el-card class="panel-card" shadow="never">
+          <template #header>
+            <strong>参考线索</strong>
+          </template>
+          <template v-if="lastResponse">
+            <div class="assistant-response-meta">
+              <span>本次结果</span>
+              <el-tag :type="lastResponse.cacheHit ? 'success' : 'info'" effect="dark" round>
+                {{ lastResponse.cacheHit ? '缓存命中' : '实时生成' }}
+              </el-tag>
+            </div>
+
+            <div class="query-tags">
+              <el-tag
+                v-for="entry in structuredQueryEntries"
+                :key="entry.label"
+                effect="plain"
+                round
+              >
+                {{ entry.label }}：{{ entry.value }}
+              </el-tag>
+            </div>
+
+            <el-divider />
+
+            <div class="assistant-side__section">
+              <h3>重点摘要</h3>
+              <ul class="assistant-list">
+                <li v-for="item in lastResponse.highlights" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div class="assistant-side__section">
+              <h3>证据线索</h3>
+              <div v-if="lastResponse.evidence.length" class="evidence-list">
+                <div v-for="item in lastResponse.evidence" :key="`${item.type}-${item.title}`" class="evidence-item">
+                  <div class="evidence-item__top">
+                    <strong>{{ item.title || '数据线索' }}</strong>
+                    <el-tag v-if="item.score !== undefined" effect="plain" round>
+                      RAG {{ formatScore(item.score) }}
+                    </el-tag>
+                  </div>
+                  <span>{{ item.description || item.type || '-' }}</span>
+                  <RouterLink v-if="item.sourcePath" class="evidence-item__link" :to="item.sourcePath">
+                    打开证据来源
+                  </RouterLink>
+                </div>
+              </div>
+              <el-empty v-else description="这次回答没有返回额外证据线索" />
+            </div>
+          </template>
+          <el-empty v-else description="提问后这里会展示本次回答参考的线索和证据" />
+        </el-card>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { Delete, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { askAiAssistantStream, clearAiAssistantHistory, getAiAssistantHistory } from '@/api/ai'
+import type { AiAssistantChatResponse, AiAssistantMessage } from '@/types/gsmv'
+
+const quickPrompts = [
+  '昨晚湛江港附近有哪些船舶异常减速？',
+  '近 7 天哪条航线的 AIS 记录最活跃？',
+  '当前有哪些高风险船舶需要复核？',
+  '近 30 天谁录入的 AIS 记录最多？',
+]
+
+const welcomeMessage: AiAssistantMessage = {
+  role: 'assistant',
+  content: '你可以像平常聊天一样问我，比如“昨晚湛江港附近有哪些船舶异常减速”“近 30 天哪条航线最活跃”。我会先查系统和知识库，再尽量用正常、好懂的话回答。',
+}
+
+const messages = ref<AiAssistantMessage[]>([{ ...welcomeMessage }])
+const input = ref('')
+const loading = ref(false)
+const loadingHistory = ref(false)
+const lastResponse = ref<AiAssistantChatResponse | null>(null)
+const messagesContainerRef = ref<HTMLDivElement | null>(null)
+
+const structuredQueryEntries = computed(() => {
+  if (!lastResponse.value) {
+    return []
+  }
+
+  const query = lastResponse.value.structuredQuery
+  const entries = [
+    { label: '意图', value: query.intent },
+    { label: '地点', value: query.locationKeyword || '' },
+    { label: '航运节点', value: query.ecosystemKeyword || '' },
+    { label: '船舶', value: query.speciesKeyword || '' },
+    { label: '风险等级', value: query.protectionLevel || '' },
+    { label: 'IUCN', value: query.iucnStatus || '' },
+    { label: '近年范围', value: query.yearsBack ? `${query.yearsBack} 年` : '' },
+    { label: '近天范围', value: query.recentDays ? `${query.recentDays} 天` : '' },
+    { label: '趋势分析', value: query.includeTrend ? '是' : '' },
+    { label: '风险筛选', value: query.riskOnly ? '是' : '' },
+  ]
+
+  return entries.filter((item) => item.value)
+})
+
+function applyPrompt(prompt: string) {
+  input.value = prompt
+}
+
+function formatScore(value: number) {
+  return Number.isFinite(value) ? value.toFixed(2) : '0.00'
+}
+
+async function scrollMessagesToBottom(behavior: ScrollBehavior = 'smooth') {
+  await nextTick()
+
+  if (messagesContainerRef.value) {
+    messagesContainerRef.value.scrollTo({
+      top: messagesContainerRef.value.scrollHeight,
+      behavior,
+    })
+  }
+}
+
+watch(
+  () => messages.value.length,
+  (_, previousLength) => {
+    void scrollMessagesToBottom(previousLength === undefined ? 'auto' : 'smooth')
+  },
+)
+
+watch(loading, (value) => {
+  if (value) {
+    void scrollMessagesToBottom('smooth')
+  }
+})
+
+onMounted(() => {
+  void loadHistory()
+})
+
+async function sendMessage(prefilled?: string) {
+  const message = (prefilled ?? input.value).trim()
+  if (!message || loading.value) {
+    return
+  }
+
+  const history = messages.value
+    .filter((item) => item.role === 'user' || item.role === 'assistant')
+    .filter((item) => item.content !== welcomeMessage.content)
+    .slice(-6)
+  messages.value.push({ role: 'user', content: message })
+  const assistantMessageIndex = messages.value.push({
+    role: 'assistant',
+    content: '正在查资料并组织回答...',
+  }) - 1
+  input.value = ''
+  loading.value = true
+  let answerStarted = false
+
+  try {
+    await askAiAssistantStream({ message, history }, (event) => {
+      if (event.type === 'status') {
+        if (!answerStarted && event.content) {
+          updateAssistantMessage(assistantMessageIndex, event.content)
+        }
+        return
+      }
+
+      if (event.type === 'delta') {
+        if (!answerStarted) {
+          answerStarted = true
+          updateAssistantMessage(assistantMessageIndex, '')
+        }
+        appendAssistantMessage(assistantMessageIndex, event.content ?? '')
+        return
+      }
+
+      if (event.type === 'final' && event.response) {
+        lastResponse.value = event.response
+        updateAssistantMessage(assistantMessageIndex, event.response.answer)
+        return
+      }
+
+      if (event.type === 'error') {
+        throw new Error(event.content || '智能助手暂时不可用')
+      }
+    })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '智能助手暂时不可用')
+    updateAssistantMessage(assistantMessageIndex, '这次回答失败了，请稍后再试，或者换一种问法。')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadHistory() {
+  loadingHistory.value = true
+  try {
+    const history = await getAiAssistantHistory()
+    messages.value = history.messages.length
+      ? history.messages.map((item) => ({ role: item.role, content: item.content }))
+      : [{ ...welcomeMessage }]
+    lastResponse.value = history.lastResponse ?? null
+    await scrollMessagesToBottom('auto')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '对话历史加载失败')
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+async function clearHistory() {
+  if (loading.value || loadingHistory.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm('只会清空当前登录账号的智能分析对话记录，其他账号不受影响。', '清空对话记录', {
+      confirmButtonText: '清空',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await clearAiAssistantHistory()
+    messages.value = [{ ...welcomeMessage }]
+    lastResponse.value = null
+    ElMessage.success('当前账号的对话记录已清空')
+    await scrollMessagesToBottom('auto')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : '对话历史清空失败')
+    }
+  }
+}
+
+function updateAssistantMessage(index: number, content: string) {
+  messages.value[index] = {
+    role: 'assistant',
+    content,
+  }
+  void scrollMessagesToBottom('smooth')
+}
+
+function appendAssistantMessage(index: number, content: string) {
+  const current = messages.value[index]?.content ?? ''
+  updateAssistantMessage(index, `${current}${content}`)
+}
+</script>
+
+<style scoped>
+.assistant-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 430px);
+  align-items: stretch;
+  gap: 18px;
+}
+
+.assistant-hero__window {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 28px;
+  border: 1px solid rgba(75, 241, 186, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(4, 22, 30, 0.68);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 28px 56px rgba(2, 14, 38, 0.16);
+  overflow: hidden;
+}
+
+.assistant-hero__window::after {
+  content: '';
+  position: absolute;
+  right: -54px;
+  bottom: -78px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(79, 240, 181, 0.14), transparent 72%);
+  pointer-events: none;
+}
+
+.assistant-hero__badge,
+.assistant-hero__feature,
+.assistant-hero__preview {
+  position: relative;
+  z-index: 1;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(75, 241, 186, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(4, 23, 31, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.assistant-hero__feature::after,
+.assistant-story-card::after,
+.evidence-item::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  bottom: -36px;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 189, 99, 0.12), transparent 72%);
+  pointer-events: none;
+}
+
+.assistant-hero__badge span,
+.assistant-hero__feature span,
+.assistant-story-card span {
+  color: var(--gsmv-muted);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.assistant-hero__badge strong,
+.assistant-hero__feature strong,
+.assistant-hero__preview strong,
+.assistant-story-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.assistant-hero__feature-grid,
+.assistant-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.assistant-hero__preview span {
+  color: var(--gsmv-muted);
+  font-size: 13px;
+}
+
+.assistant-story-card {
+  position: relative;
+  padding: 20px 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(75, 241, 186, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(5, 23, 31, 0.62);
+  box-shadow: var(--gsmv-shadow-soft);
+  overflow: hidden;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.assistant-story-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 189, 99, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 36px rgba(2, 15, 44, 0.16);
+}
+
+.assistant-story-card::before {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  color: rgba(139, 239, 255, 0.36);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.assistant-story-card:nth-child(1)::before {
+  content: '01';
+}
+
+.assistant-story-card:nth-child(2)::before {
+  content: '02';
+}
+
+.assistant-story-card:nth-child(3)::before {
+  content: '03';
+}
+
+.assistant-story-card p {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  color: rgba(232, 247, 255, 0.84);
+  line-height: 1.72;
+}
+
+.assistant-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.8fr);
+  gap: 18px;
+}
+
+.assistant-workbench :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.assistant-workbench {
+  position: relative;
+  overflow: hidden;
+}
+
+.assistant-workbench::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(129, 238, 255, 0.34), transparent);
+  pointer-events: none;
+}
+
+.assistant-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assistant-header p {
+  margin: 10px 0 0;
+  color: var(--gsmv-muted);
+  line-height: 1.68;
+}
+
+.assistant-header span {
+  color: var(--gsmv-muted);
+  font-size: 13px;
+}
+
+.assistant-header__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.assistant-header__actions :deep(.el-button.is-circle) {
+  width: 34px;
+  height: 34px;
+  border-color: rgba(75, 241, 186, 0.24);
+  background: rgba(5, 35, 43, 0.58);
+  color: rgba(226, 255, 246, 0.9);
+}
+
+.assistant-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 440px;
+  max-height: 680px;
+  overflow: auto;
+  padding: 4px 8px 4px 0;
+  scrollbar-width: thin;
+}
+
+.assistant-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.assistant-messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(79, 240, 181, 0.24);
+}
+
+.assistant-message {
+  position: relative;
+  max-width: 88%;
+  padding: 16px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(75, 241, 186, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    rgba(5, 31, 40, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 28px rgba(0, 9, 34, 0.12);
+}
+
+.assistant-message--user {
+  margin-left: auto;
+  background:
+    linear-gradient(135deg, rgba(79, 240, 181, 0.24), rgba(255, 189, 99, 0.12)),
+    rgba(4, 34, 39, 0.74);
+}
+
+.assistant-message__meta {
+  margin-bottom: 8px;
+  color: var(--gsmv-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.assistant-message__content {
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.assistant-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.assistant-composer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--gsmv-muted);
+  font-size: 13px;
+}
+
+.assistant-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-chip {
+  position: relative;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(75, 241, 186, 0.14);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(6, 31, 39, 0.68);
+  color: var(--gsmv-text);
+  text-align: left;
+  line-height: 1.6;
+  overflow: hidden;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.prompt-chip::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid rgba(145, 239, 255, 0.78);
+  border-right: 2px solid rgba(145, 239, 255, 0.78);
+  transform: translateY(-50%) rotate(45deg);
+  opacity: 0;
+  transition:
+    opacity 0.18s ease,
+    right 0.18s ease;
+}
+
+.prompt-chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(160, 235, 245, 0.24);
+  background: rgba(17, 74, 140, 0.46);
+  box-shadow: 0 14px 28px rgba(2, 15, 44, 0.14);
+}
+
+.prompt-chip:hover::after {
+  right: 12px;
+  opacity: 1;
+}
+
+.query-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.assistant-response-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--gsmv-muted);
+  font-size: 13px;
+}
+
+.assistant-side__section h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.assistant-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.9;
+}
+
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.evidence-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(75, 241, 186, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(5, 31, 40, 0.64);
+  overflow: hidden;
+}
+
+.evidence-item span {
+  color: var(--gsmv-muted);
+  line-height: 1.7;
+}
+
+.evidence-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.evidence-item__link {
+  width: fit-content;
+  color: #69eaff;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+@media (max-width: 1180px) {
+  .assistant-hero,
+  .assistant-story-grid,
+  .assistant-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assistant-hero__feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .assistant-composer__actions,
+  .assistant-header,
+  .assistant-response-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .assistant-message {
+    max-width: 100%;
+  }
+
+  .assistant-story-card::before {
+    font-size: 22px;
+  }
+}
+</style>

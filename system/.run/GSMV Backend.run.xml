@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="GSMV Backend" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="GSMV" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.gsmv.GsmvApplication" />
+    <option name="WORKING_DIRECTORY" value="file://$MODULE_WORKING_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

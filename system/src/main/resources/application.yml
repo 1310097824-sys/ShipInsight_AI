@@ -1,0 +1,97 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gsmv
+  datasource:
+    url: jdbc:mysql://localhost:3306/gsmv?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 512MB
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-statement-timeout: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  pattern:
+    level: "%5p [traceId:%X{traceId:-}]"
+
+gsmv:
+  ai:
+    low-confidence-threshold: 0.68
+    assistant-observation-limit: 60
+    assistant-species-limit: 20
+    embedding:
+      provider: ${AI_EMBEDDING_PROVIDER:ollama}
+    bailian:
+      enabled: true
+      api-key: ${BAILIAN_API_KEY:${DASHSCOPE_API_KEY:}}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      vision-model: qwen-vl-plus
+    ollama:
+      enabled: true
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      embedding-model: ${OLLAMA_EMBEDDING_MODEL:bge-m3}
+      embedding-dimension: ${OLLAMA_EMBEDDING_DIMENSION:1024}
+    deepseek:
+      enabled: true
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat-model: deepseek-chat
+  rag:
+    vector:
+      provider: qdrant
+    qdrant:
+      enabled: true
+      url: ${QDRANT_URL:http://localhost:6333}
+      collection: ${QDRANT_COLLECTION:gsmv_rag_chunks}
+    embedding:
+      model: bge-m3
+      dimension: 1024
+    iucn:
+      base-url: ${IUCN_API_BASE_URL:https://api.iucnredlist.org/api/v4}
+      api-token: ${IUCN_API_TOKEN:}
+    ingest:
+      max-file-size: 50MB
+      allowed-domains:
+        - api.obis.org
+        - api.gbif.org
+        - www.marinespecies.org
+        - api.iucnredlist.org
+  security:
+    jwt:
+      issuer: gsmv
+      secret: gsmv-secret-key-please-change-in-production-2026
+      access-token-ttl-minutes: 10080
+  admin:
+    enabled: true
+    username: admin
+    display-name: 系统管理员
+    bootstrap-password: 123456
+  storage:
+    upload-dir: ${user.dir}/uploads
+  clickhouse:
+    url: ${CLICKHOUSE_URL:http://localhost:8123}
+    database: ${CLICKHOUSE_DATABASE:shipinsight}
+    username: ${CLICKHOUSE_USERNAME:default}
+    password: ${CLICKHOUSE_PASSWORD:123456}
+    connect-timeout-millis: 3000
+    request-timeout-millis: 30000
