@@ -7,6 +7,7 @@ import com.github.luben.zstd.ZstdInputStream;
 import com.gsmv.ais.dto.AisBatchDeleteRequest;
 import com.gsmv.ais.dto.AisBatchOperationResult;
 import com.gsmv.ais.dto.AisBatchUpdateRequest;
+import com.gsmv.ais.dto.AisImportProgress;
 import com.gsmv.ais.dto.AisImportResult;
 import com.gsmv.ais.dto.AisRecordView;
 import com.gsmv.common.ErrorCode;
@@ -15,6 +16,7 @@ import com.gsmv.common.exception.BusinessException;
 import com.gsmv.security.CurrentUser;
 import com.gsmv.security.SecurityUtils;
 import java.io.BufferedReader;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -30,6 +32,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -45,6 +48,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 import org.springframework.http.HttpStatus;
@@ -59,6 +64,7 @@ public class AisService {
     private static final DateTimeFormatter CLICKHOUSE_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter CSV_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_BATCH_IDS = 5000;
+    private static final int IMPORT_BATCH_SIZE = 1000;
     private static final Map<String, UpdateColumn> UPDATE_COLUMNS = Map.ofEntries(
             Map.entry("vesselName", new UpdateColumn("vessel_name", UpdateType.STRING, false)),
             Map.entry("imo", new UpdateColumn("imo", UpdateType.STRING, false)),
@@ -79,6 +85,7 @@ public class AisService {
     private final AisClickHouseProperties properties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final ConcurrentMap<String, ImportProgressState> importProgresses = new ConcurrentHashMap<>();
     private volatile boolean schemaReady;
 
     public AisService(AisClickHouseProperties properties, ObjectMapper objectMapper) {
@@ -147,20 +154,194 @@ public class AisService {
         return new PageResponse<>(items, total, safePage, safeSize);
     }
 
-    public AisImportResult importFile(MultipartFile file, int limit) {
+    public PageResponse<AisRecordView> mapLatest(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo,
+            LocalDate datasetDate,
+            int limit
+    ) {
+        validateDateRange(observedFrom, observedTo);
+        ensureSchema();
+
+        int safeLimit = Math.min(Math.max(limit, 1), 100000);
+        String latestDay = datasetDate == null ? null : datasetDate.toString();
+        if (!StringUtils.hasText(latestDay)) {
+            String latestDaySql = """
+                    SELECT toDate(max(base_date_time)) AS latestDay
+                    FROM %s FINAL
+                    %s
+                    FORMAT JSONEachRow
+                    """.formatted(tableName(), buildWhere(keyword, observedFrom, observedTo));
+            latestDay = parseTextField(postQuery(latestDaySql), "latestDay");
+        }
+        if (!StringUtils.hasText(latestDay)) {
+            return new PageResponse<>(List.of(), 0, 1, safeLimit);
+        }
+        String where = buildWhere(keyword, observedFrom, observedTo, List.of("toDate(base_date_time) = toDate('" + escapeSqlString(latestDay) + "')"));
+        String listSql = """
+                SELECT
+                  argMax(record_id, base_date_time) AS id,
+                  mmsi,
+                  max(base_date_time) AS baseDateTime,
+                  argMax(longitude, base_date_time) AS longitude,
+                  argMax(latitude, base_date_time) AS latitude,
+                  argMax(sog, base_date_time) AS sog,
+                  argMax(cog, base_date_time) AS cog,
+                  argMax(heading, base_date_time) AS heading,
+                  argMax(vessel_name, base_date_time) AS vesselName,
+                  argMax(imo, base_date_time) AS imo,
+                  argMax(call_sign, base_date_time) AS callSign,
+                  argMax(vessel_type, base_date_time) AS vesselType,
+                  argMax(status, base_date_time) AS status,
+                  argMax(length, base_date_time) AS length,
+                  argMax(width, base_date_time) AS width,
+                  argMax(draft, base_date_time) AS draft,
+                  argMax(cargo, base_date_time) AS cargo,
+                  argMax(transceiver, base_date_time) AS transceiver,
+                  argMax(note, base_date_time) AS note,
+                  argMax(source_file, base_date_time) AS sourceFile,
+                  argMax(imported_by_user_id, base_date_time) AS importedByUserId,
+                  argMax(imported_by_name, base_date_time) AS importedByName,
+                  argMax(imported_at, base_date_time) AS importedAt
+                FROM (
+                  SELECT
+                    record_id,
+                    mmsi,
+                    base_date_time,
+                    longitude,
+                    latitude,
+                    sog,
+                    cog,
+                    heading,
+                    vessel_name,
+                    imo,
+                    call_sign,
+                    vessel_type,
+                    status,
+                    length,
+                    width,
+                    draft,
+                    cargo,
+                    transceiver,
+                    note,
+                    source_file,
+                    imported_by_user_id,
+                    imported_by_name,
+                    imported_at
+                  FROM %s FINAL
+                  %s
+                )
+                GROUP BY mmsi
+                ORDER BY baseDateTime DESC
+                LIMIT %d
+                FORMAT JSONEachRow
+                """.formatted(tableName(), where, safeLimit);
+        String countSql = """
+                SELECT uniqExact(mmsi) AS total
+                FROM (
+                  SELECT mmsi
+                  FROM %s FINAL
+                  %s
+                )
+                FORMAT JSONEachRow
+                """.formatted(tableName(), where);
+
+        List<AisRecordView> items = parseRecords(postQuery(listSql));
+        long total = parseTotal(postQuery(countSql));
+        return new PageResponse<>(items, total, 1, safeLimit);
+    }
+
+    public List<String> datasetDates() {
+        ensureSchema();
+        String sql = """
+                SELECT toString(toDate(base_date_time)) AS datasetDate
+                FROM %s FINAL
+                GROUP BY datasetDate
+                ORDER BY datasetDate DESC
+                FORMAT JSONEachRow
+                """.formatted(tableName());
+        return parseTextFields(postQuery(sql), "datasetDate");
+    }
+
+    public PageResponse<AisRecordView> vesselTrack(String mmsi, int limit) {
+        ensureSchema();
+        if (!StringUtils.hasText(mmsi)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择船只编号", HttpStatus.BAD_REQUEST);
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), 20000);
+        String escapedMmsi = escapeSqlString(mmsi.trim());
+        String listSql = """
+                SELECT
+                  record_id AS id,
+                  mmsi,
+                  base_date_time AS baseDateTime,
+                  longitude,
+                  latitude,
+                  sog,
+                  cog,
+                  heading,
+                  vessel_name AS vesselName,
+                  imo,
+                  call_sign AS callSign,
+                  vessel_type AS vesselType,
+                  status,
+                  length,
+                  width,
+                  draft,
+                  cargo,
+                  transceiver,
+                  note,
+                  source_file AS sourceFile,
+                  imported_by_user_id AS importedByUserId,
+                  imported_by_name AS importedByName,
+                  imported_at AS importedAt
+                FROM %s FINAL
+                WHERE mmsi = '%s'
+                ORDER BY base_date_time ASC
+                LIMIT %d
+                FORMAT JSONEachRow
+                """.formatted(tableName(), escapedMmsi, safeLimit);
+        String countSql = """
+                SELECT count() AS total
+                FROM %s FINAL
+                WHERE mmsi = '%s'
+                FORMAT JSONEachRow
+                """.formatted(tableName(), escapedMmsi);
+
+        List<AisRecordView> items = parseRecords(postQuery(listSql));
+        long total = parseTotal(postQuery(countSql));
+        return new PageResponse<>(items, total, 1, safeLimit);
+    }
+
+    public AisImportProgress importProgress(String taskId) {
+        if (!StringUtils.hasText(taskId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "missing import task id", HttpStatus.BAD_REQUEST);
+        }
+        ImportProgressState state = importProgresses.get(taskId.trim());
+        if (state == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "import task not found", HttpStatus.NOT_FOUND);
+        }
+        return state.snapshot();
+    }
+
+    public AisImportResult importFile(MultipartFile file, Integer limit, String taskId) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要导入的 AIS 文件", HttpStatus.BAD_REQUEST);
         }
 
         ensureSchema();
         CurrentUser currentUser = SecurityUtils.requireCurrentUser();
-        int safeLimit = Math.min(Math.max(limit, 1), 1000);
+        Integer safeLimit = limit == null || limit <= 0 ? null : Math.min(limit, 1000);
         String uploadName = StringUtils.hasText(file.getOriginalFilename()) ? file.getOriginalFilename() : "local-upload";
+        ImportProgressState progress = startImportProgress(taskId, uploadName, file.getSize(), safeLimit);
         int skipped = 0;
+        int imported = 0;
         List<Map<String, Object>> insertRows = new ArrayList<>();
 
         try (
-                InputStream input = openPossiblyCompressed(file);
+                CountingInputStream rawInput = new CountingInputStream(file.getInputStream(), progress);
+                InputStream input = openPossiblyCompressed(rawInput);
                 BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))
         ) {
             String headerLine = reader.readLine();
@@ -171,7 +352,7 @@ public class AisService {
             Map<String, Integer> columns = buildColumnIndex(headers);
 
             String line;
-            while ((line = reader.readLine()) != null && insertRows.size() < safeLimit) {
+            while ((line = reader.readLine()) != null && (safeLimit == null || imported + insertRows.size() < safeLimit)) {
                 if (line.isBlank()) {
                     continue;
                 }
@@ -179,11 +360,19 @@ public class AisService {
                 ParsedAisRow parsed = parseAisRow(values, columns, uploadName);
                 if (parsed == null) {
                     skipped++;
+                    progress.update(imported, skipped, "导入中");
                     continue;
                 }
                 insertRows.add(toClickHouseRow(parsed, currentUser));
+                if (insertRows.size() >= IMPORT_BATCH_SIZE) {
+                    insertRows(insertRows);
+                    imported += insertRows.size();
+                    insertRows.clear();
+                    progress.update(imported, skipped, "导入中");
+                }
             }
         } catch (BusinessException ex) {
+            progress.fail(ex.getMessage());
             throw ex;
         } catch (IOException ex) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "AIS 文件读取失败：" + ex.getMessage(), HttpStatus.BAD_REQUEST);
@@ -191,8 +380,11 @@ public class AisService {
 
         if (!insertRows.isEmpty()) {
             insertRows(insertRows);
+            imported += insertRows.size();
+            progress.update(imported, skipped, "导入中");
         }
-        return new AisImportResult(uploadName, insertRows.size(), skipped, safeLimit);
+        progress.complete(imported, skipped);
+        return new AisImportResult(uploadName, imported, skipped, safeLimit == null ? 0 : safeLimit);
     }
 
     public AisBatchOperationResult deleteBatch(AisBatchDeleteRequest request) {
@@ -360,8 +552,8 @@ public class AisService {
         );
     }
 
-    private InputStream openPossiblyCompressed(MultipartFile file) throws IOException {
-        PushbackInputStream input = new PushbackInputStream(file.getInputStream(), 8);
+    private InputStream openPossiblyCompressed(InputStream source) throws IOException {
+        PushbackInputStream input = new PushbackInputStream(source, 8);
         byte[] header = input.readNBytes(4);
         if (header.length > 0) {
             input.unread(header);
@@ -483,7 +675,19 @@ public class AisService {
     }
 
     private String buildWhere(String keyword, LocalDateTime observedFrom, LocalDateTime observedTo) {
-        List<String> clauses = buildFilterClauses(keyword, observedFrom, observedTo);
+        return buildWhere(keyword, observedFrom, observedTo, List.of());
+    }
+
+    private String buildWhere(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo,
+            List<String> extraClauses
+    ) {
+        List<String> clauses = new ArrayList<>(buildFilterClauses(keyword, observedFrom, observedTo));
+        if (extraClauses != null) {
+            extraClauses.stream().filter(StringUtils::hasText).forEach(clauses::add);
+        }
         if (clauses.isEmpty()) {
             return "";
         }
@@ -738,6 +942,37 @@ public class AisService {
         }
     }
 
+    private String parseTextField(String body, String field) {
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line = reader.readLine();
+            if (!StringUtils.hasText(line)) {
+                return "";
+            }
+            return text(objectMapper.readTree(line), field);
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse 查询结果解析失败", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private List<String> parseTextFields(String body, String field) {
+        List<String> values = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!StringUtils.hasText(line)) {
+                    continue;
+                }
+                String value = text(objectMapper.readTree(line), field);
+                if (StringUtils.hasText(value)) {
+                    values.add(value);
+                }
+            }
+            return values;
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse result parse failed", HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private String text(JsonNode node, String field) {
         JsonNode value = node.path(field);
         return value.isMissingNode() || value.isNull() ? null : value.asText();
@@ -829,6 +1064,126 @@ public class AisService {
             return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
+        }
+    }
+
+    private ImportProgressState startImportProgress(String taskId, String sourceFile, long totalBytes, Integer limit) {
+        String safeTaskId = StringUtils.hasText(taskId) ? taskId.trim() : sha256Hex(sourceFile + "|" + Instant.now());
+        ImportProgressState state = new ImportProgressState(
+                safeTaskId,
+                sourceFile,
+                Math.max(totalBytes, 0),
+                limit == null ? 0 : limit
+        );
+        importProgresses.put(safeTaskId, state);
+        return state;
+    }
+
+    private static class CountingInputStream extends FilterInputStream {
+        private final ImportProgressState progress;
+
+        CountingInputStream(InputStream input, ImportProgressState progress) {
+            super(input);
+            this.progress = progress;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) {
+                progress.addBytes(1);
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = super.read(buffer, offset, length);
+            if (read > 0) {
+                progress.addBytes(read);
+            }
+            return read;
+        }
+    }
+
+    private static class ImportProgressState {
+        private final String taskId;
+        private final String sourceFile;
+        private final long totalBytes;
+        private final int limit;
+        private final LocalDateTime startedAt = LocalDateTime.now();
+        private long bytesRead;
+        private int imported;
+        private int skipped;
+        private String status = "running";
+        private String message = "准备导入";
+        private LocalDateTime updatedAt = startedAt;
+
+        ImportProgressState(String taskId, String sourceFile, long totalBytes, int limit) {
+            this.taskId = taskId;
+            this.sourceFile = sourceFile;
+            this.totalBytes = totalBytes;
+            this.limit = limit;
+        }
+
+        synchronized void addBytes(long bytes) {
+            bytesRead += bytes;
+            touch();
+        }
+
+        synchronized void update(int imported, int skipped, String message) {
+            this.imported = imported;
+            this.skipped = skipped;
+            this.message = message;
+            touch();
+        }
+
+        synchronized void complete(int imported, int skipped) {
+            this.imported = imported;
+            this.skipped = skipped;
+            this.bytesRead = Math.max(bytesRead, totalBytes);
+            this.status = "completed";
+            this.message = "导入完成";
+            touch();
+        }
+
+        synchronized void fail(String message) {
+            this.status = "failed";
+            this.message = StringUtils.hasText(message) ? message : "导入失败";
+            touch();
+        }
+
+        synchronized AisImportProgress snapshot() {
+            return new AisImportProgress(
+                    taskId,
+                    sourceFile,
+                    status,
+                    bytesRead,
+                    totalBytes,
+                    imported,
+                    skipped,
+                    limit,
+                    progress(),
+                    message,
+                    startedAt,
+                    updatedAt
+            );
+        }
+
+        private int progress() {
+            if ("completed".equals(status)) {
+                return 100;
+            }
+            if (totalBytes <= 0) {
+                return imported > 0 ? 95 : 5;
+            }
+            long boundedBytes = Math.max(0, Math.min(bytesRead, totalBytes));
+            int percentage = (int) Math.floor((boundedBytes * 100.0) / totalBytes);
+            return Math.max(1, Math.min(99, percentage));
+        }
+
+        private void touch() {
+            updatedAt = LocalDateTime.now();
         }
     }
 

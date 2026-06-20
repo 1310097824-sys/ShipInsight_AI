@@ -6,27 +6,43 @@
         <p>记录接收时间、船舶位置、航运节点、航行参数和关联船舶信息，并支持按查询结果批量维护。</p>
       </div>
       <div class="page-hero__actions">
-        <el-input-number
-          v-if="canWrite"
-          v-model="importLimit"
-          :min="1"
-          :max="1000"
-          controls-position="right"
-          class="import-limit"
-        />
-        <el-upload
-          v-if="canWrite"
-          action="#"
-          accept=".csv,.zst,.tgz,.gz"
-          :auto-upload="false"
-          :show-file-list="false"
-          :on-change="handleFileSelected"
-        >
-          <el-button type="primary" :loading="importing">
-            <el-icon><Upload /></el-icon>
-            <span>导入 AIS 文件</span>
-          </el-button>
-        </el-upload>
+        <div v-if="canWrite" class="import-action-group">
+          <div class="limited-import">
+            <span>前</span>
+            <el-input-number
+              v-model="importLimit"
+              :min="1"
+              :max="1000"
+              controls-position="right"
+              class="import-limit"
+            />
+            <span>条</span>
+          </div>
+          <el-upload
+            action="#"
+            accept=".csv,.zst,.tgz,.gz"
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="handleLimitedFileSelected"
+          >
+            <el-button type="primary" :loading="importingMode === 'limited'">
+              <el-icon><Upload /></el-icon>
+              <span>导入前 {{ importLimit }} 条</span>
+            </el-button>
+          </el-upload>
+          <el-upload
+            action="#"
+            accept=".csv,.zst,.tgz,.gz"
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="handleAllFileSelected"
+          >
+            <el-button class="import-all-button" type="success" plain :loading="importingMode === 'all'">
+              <el-icon><Upload /></el-icon>
+              <span>导入全部数据</span>
+            </el-button>
+          </el-upload>
+        </div>
       </div>
     </section>
 
@@ -88,6 +104,21 @@
         <strong>{{ lastImport.sourceFile }}</strong>
         <span>已导入 {{ lastImport.imported }} 条</span>
         <span v-if="lastImport.skipped">跳过 {{ lastImport.skipped }} 条</span>
+        <span>{{ lastImport.limit ? `限制前 ${lastImport.limit} 条` : '全量导入' }}</span>
+      </div>
+
+      <div v-if="importProgress" class="import-progress">
+        <div class="import-progress__meta">
+          <strong>{{ importProgress.sourceFile || 'AIS 文件导入' }}</strong>
+          <span>{{ importProgressText }}</span>
+        </div>
+        <el-progress
+          :percentage="importProgress.progress"
+          :status="importProgressStatus"
+          :stroke-width="10"
+          striped
+          striped-flow
+        />
       </div>
 
       <div class="ais-table-wrap">
@@ -257,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   Delete,
   Edit,
@@ -270,12 +301,19 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
-import { deleteAisRecords, fetchAisRecords, importAisRecords, updateAisRecords } from '@/api/aisRecords'
+import {
+  deleteAisRecords,
+  fetchAisImportProgress,
+  fetchAisRecords,
+  importAisRecords,
+  updateAisRecords,
+} from '@/api/aisRecords'
 import { useAuthStore } from '@/stores/auth'
-import type { AisBatchOperationPayload, AisRecordView } from '@/types/gsmv'
+import type { AisBatchOperationPayload, AisImportProgress, AisRecordView } from '@/types/gsmv'
 import type { AisImportResult } from '@/types/gsmv'
 
 type EditScope = 'selected' | 'matched'
+type ImportMode = 'limited' | 'all'
 type EditableKey =
   | 'vesselName'
   | 'imo'
@@ -292,7 +330,7 @@ type EditableKey =
 const authStore = useAuthStore()
 
 const loading = ref(false)
-const importing = ref(false)
+const importingMode = ref<ImportMode | ''>('')
 const batchOperating = ref(false)
 const rows = ref<AisRecordView[]>([])
 const selectedRows = ref<AisRecordView[]>([])
@@ -302,6 +340,8 @@ const editDialogVisible = ref(false)
 const editScope = ref<EditScope>('selected')
 const importLimit = ref(10)
 const lastImport = ref<AisImportResult | null>(null)
+const importProgress = ref<AisImportProgress | null>(null)
+let importProgressTimer: ReturnType<typeof window.setInterval> | null = null
 
 const editableFields: { key: EditableKey; label: string }[] = [
   { key: 'vesselName', label: '船名' },
@@ -346,6 +386,35 @@ const activeFilterText = computed(() => {
     parts.push(`${from || '不限'} 至 ${to || '不限'}`)
   }
   return parts.join(' / ')
+})
+const importProgressStatus = computed(() => {
+  if (importProgress.value?.status === 'completed') {
+    return 'success'
+  }
+  if (importProgress.value?.status === 'failed') {
+    return 'exception'
+  }
+  return undefined
+})
+const importProgressText = computed(() => {
+  if (!importProgress.value) {
+    return ''
+  }
+  const progress = importProgress.value
+  const parts = [`${progress.progress}%`]
+  if (progress.imported || progress.skipped) {
+    parts.push(`已导入 ${progress.imported} 条`)
+  }
+  if (progress.skipped) {
+    parts.push(`跳过 ${progress.skipped} 条`)
+  }
+  if (progress.limit) {
+    parts.push(`限制 ${progress.limit} 条`)
+  }
+  if (progress.message) {
+    parts.push(progress.message)
+  }
+  return parts.join(' · ')
 })
 const metricEntries = computed(() => {
   if (!detail.value) {
@@ -417,20 +486,87 @@ function handleSelectionChange(selection: AisRecordView[]) {
   selectedRows.value = selection
 }
 
-async function handleFileSelected(uploadFile: UploadFile) {
+function handleLimitedFileSelected(uploadFile: UploadFile) {
+  void handleFileSelected(uploadFile, 'limited')
+}
+
+function handleAllFileSelected(uploadFile: UploadFile) {
+  void handleFileSelected(uploadFile, 'all')
+}
+
+async function handleFileSelected(uploadFile: UploadFile, mode: ImportMode) {
   if (!uploadFile.raw) {
     return
   }
-  importing.value = true
+  importingMode.value = mode
+  const taskId = createImportTaskId()
+  importProgress.value = {
+    taskId,
+    sourceFile: uploadFile.name,
+    status: 'running',
+    bytesRead: 0,
+    totalBytes: uploadFile.size || 0,
+    imported: 0,
+    skipped: 0,
+    limit: mode === 'limited' ? importLimit.value : 0,
+    progress: 1,
+    message: '准备上传',
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  startImportProgressPolling(taskId)
   try {
-    lastImport.value = await importAisRecords(uploadFile.raw, importLimit.value)
-    ElMessage.success(`已导入 ${lastImport.value.imported} 条 AIS 记录`)
+    lastImport.value = await importAisRecords(uploadFile.raw, mode === 'limited' ? importLimit.value : 0, taskId)
+    await refreshImportProgress(taskId, true)
+    ElMessage.success(`${mode === 'all' ? '全量导入完成' : '导入完成'}：${lastImport.value.imported} 条 AIS 记录`)
     pagination.page = 1
     await loadData()
   } catch (error) {
+    stopImportProgressPolling()
+    if (importProgress.value) {
+      importProgress.value = {
+        ...importProgress.value,
+        status: 'failed',
+        progress: importProgress.value.progress || 1,
+        message: error instanceof Error ? error.message : 'AIS 文件导入失败',
+      }
+    }
     ElMessage.error(error instanceof Error ? error.message : 'AIS 文件导入失败')
   } finally {
-    importing.value = false
+    importingMode.value = ''
+  }
+}
+
+function createImportTaskId() {
+  const random = Math.random().toString(36).slice(2, 10)
+  return `ais-import-${Date.now()}-${random}`
+}
+
+function startImportProgressPolling(taskId: string) {
+  stopImportProgressPolling()
+  importProgressTimer = window.setInterval(() => {
+    void refreshImportProgress(taskId)
+  }, 1000)
+}
+
+function stopImportProgressPolling() {
+  if (importProgressTimer) {
+    window.clearInterval(importProgressTimer)
+    importProgressTimer = null
+  }
+}
+
+async function refreshImportProgress(taskId: string, finalRefresh = false) {
+  try {
+    const progress = await fetchAisImportProgress(taskId)
+    importProgress.value = progress
+    if (finalRefresh || progress.status === 'completed' || progress.status === 'failed') {
+      stopImportProgressPolling()
+    }
+  } catch {
+    if (finalRefresh) {
+      stopImportProgressPolling()
+    }
   }
 }
 
@@ -614,6 +750,10 @@ function nullableText(value: number | string | null | undefined) {
 onMounted(() => {
   void loadData()
 })
+
+onBeforeUnmount(() => {
+  stopImportProgressPolling()
+})
 </script>
 
 <style scoped>
@@ -634,8 +774,34 @@ onMounted(() => {
   align-items: center;
 }
 
+.import-action-group,
+.limited-import {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.limited-import {
+  gap: 6px;
+  flex-wrap: nowrap;
+  color: rgba(222, 246, 255, 0.86);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .import-limit {
   width: 116px;
+}
+
+.import-all-button {
+  --el-button-bg-color: rgba(30, 208, 126, 0.14);
+  --el-button-border-color: rgba(80, 229, 155, 0.5);
+  --el-button-text-color: #aaffd2;
+  --el-button-hover-bg-color: rgba(30, 208, 126, 0.22);
+  --el-button-hover-border-color: rgba(116, 255, 182, 0.72);
+  --el-button-hover-text-color: #ffffff;
 }
 
 .query-toolbar {
@@ -714,6 +880,39 @@ onMounted(() => {
 
 .import-result strong {
   color: #f5fdff;
+}
+
+.import-progress {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 229, 255, 0.22);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.1), rgba(124, 60, 255, 0.08)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.import-progress__meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(231, 248, 255, 0.86);
+  font-size: 13px;
+}
+
+.import-progress__meta strong {
+  color: #f5fdff;
+}
+
+.import-progress__meta span {
+  color: rgba(214, 240, 255, 0.72);
+}
+
+.import-progress :deep(.el-progress-bar__outer) {
+  background-color: rgba(9, 19, 45, 0.72);
 }
 
 .table-footer {

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-shell">
     <aside class="app-shell__aside">
       <section class="brand-card">
@@ -6,7 +6,7 @@
         <div class="brand-card__glow brand-card__glow--soft" />
         <span class="brand-card__eyebrow">ShipInsight</span>
         <h1>AIS 船舶交通态势平台</h1>
-        <p>围绕船舶档案、航线地图、航运网络、AIS 记录、异常复核与分析报告，构建一体化船舶交通态势工作区。</p>
+        <p>围绕船舶档案、航线地图、AIS 记录、异常复核与分析报告，构建一体化船舶交通态势工作区。</p>
         <div class="brand-card__meta">
           <span>态势感知</span>
           <span>航线回放</span>
@@ -45,10 +45,14 @@
 
         <div class="app-header__intro">
           <span class="app-header__eyebrow">{{ activeMenuLabel }}</span>
-          <strong>欢迎回来！{{ welcomeName }}</strong>
+          <strong>欢迎回来，{{ welcomeName }}</strong>
         </div>
 
         <div class="app-header__actions">
+          <RouterLink v-if="hasMenuAccess('OBS_READ')" to="/marine-traffic" class="marine-map-chip" title="打开海上交通图">
+            <el-icon><MapLocation /></el-icon>
+            <span>海上交通图</span>
+          </RouterLink>
           <RouterLink to="/profile" class="profile-chip">
             <el-avatar :size="40" :src="authStore.profile?.avatarUrl || '/default-avatar.jpg'">
               {{ authStore.profile?.displayName?.slice(0, 1) || 'U' }}
@@ -88,7 +92,6 @@ import {
   Document,
   Finished,
   Histogram,
-  Location,
   MapLocation,
   Notebook,
   Setting,
@@ -104,9 +107,8 @@ const authStore = useAuthStore()
 
 const menus = [
   { path: '/dashboard', label: '态势总览', icon: DataAnalysis, authority: 'REPORT_READ' },
-  { path: '/species', label: '船舶档案', icon: Document, authority: 'SPECIES_READ' },
+  { path: '/vessels', label: '船舶档案', icon: Document, authority: 'VESSEL_READ' },
   { path: '/eco-map', label: '航线地图', icon: MapLocation, authority: 'OBS_READ' },
-  { path: '/ecosystems', label: '航运网络', icon: Location, authority: 'ECOSYSTEM_READ' },
   { path: '/observations', label: 'AIS 记录', icon: Notebook, authority: 'OBS_READ' },
   { path: '/ai-reviews', label: '异常复核', icon: Finished, authority: 'AI_REVIEW_READ' },
   { path: '/assistant', label: '智能分析', icon: ChatDotRound },
@@ -119,7 +121,7 @@ const menus = [
 ]
 
 const availableMenus = computed(() =>
-  menus.filter((item) => !item.authority || authStore.authorities.includes(item.authority)),
+  menus.filter((item) => !item.authority || hasMenuAccess(item.authority)),
 )
 
 const primaryMenus = computed(() =>
@@ -134,6 +136,14 @@ const welcomeName = computed(() => authStore.profile?.displayName || authStore.p
 
 function isMenuActive(path: string) {
   return route.path === path || route.path.startsWith(`${path}/`)
+}
+
+function hasMenuAccess(authority: string) {
+  return (
+    authStore.authorities.includes(authority) ||
+    authStore.profile?.roles.includes('ADMIN') ||
+    (authority === 'VESSEL_READ' && authStore.authorities.includes('SPECIES_READ'))
+  )
 }
 
 function handleLogout() {
@@ -521,7 +531,8 @@ function handleLogout() {
   justify-content: flex-end;
 }
 
-.profile-chip {
+.profile-chip,
+.marine-map-chip {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -538,6 +549,16 @@ function handleLogout() {
     box-shadow 0.18s ease;
 }
 
+.marine-map-chip {
+  padding: 9px 15px;
+}
+
+.marine-map-chip .el-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--gsmv-primary);
+}
+
 .profile-chip:hover {
   transform: translateY(-1px);
   border-color: rgba(255, 189, 99, 0.3);
@@ -551,7 +572,8 @@ function handleLogout() {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
-.profile-chip span {
+.profile-chip span,
+.marine-map-chip span {
   color: var(--gsmv-text);
   font-size: 14px;
   font-weight: 600;

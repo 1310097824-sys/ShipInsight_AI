@@ -3,6 +3,8 @@ data/
 one mon/
 train/
 clean/
+clean1/
+clean2/
 clickhouse-data/
 
 # Codex / IDE / OS local files

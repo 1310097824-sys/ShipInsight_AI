@@ -3,6 +3,7 @@ import type {
   AisBatchOperationPayload,
   AisBatchOperationResult,
   AisBatchUpdatePayload,
+  AisImportProgress,
   AisImportResult,
   AisRecordView,
   PageResponse,
@@ -18,13 +19,40 @@ export function fetchAisRecords(params: {
   return unwrap<PageResponse<AisRecordView>>(http.get('/v1/ais-records', { params }))
 }
 
-export function importAisRecords(file: File, limit = 10) {
+export function fetchAisMapRecords(params: {
+  keyword?: string
+  datasetDate?: string
+  observedFrom?: string
+  observedTo?: string
+  limit?: number
+}) {
+  return unwrap<PageResponse<AisRecordView>>(http.get('/v1/ais-records/map', { params }))
+}
+
+export function fetchAisDatasetDates() {
+  return unwrap<string[]>(http.get('/v1/ais-records/dataset-dates'))
+}
+
+export function fetchAisVesselTrack(mmsi: string, limit = 5000) {
+  return unwrap<PageResponse<AisRecordView>>(http.get(`/v1/ais-records/${encodeURIComponent(mmsi)}/track`, { params: { limit } }))
+}
+
+export function fetchAisImportProgress(taskId: string) {
+  return unwrap<AisImportProgress>(http.get(`/v1/ais-records/import/progress/${encodeURIComponent(taskId)}`))
+}
+
+export function importAisRecords(file: File, limit?: number | null, taskId?: string) {
   const form = new FormData()
   form.append('file', file)
-  form.append('limit', String(limit))
+  if (typeof limit === 'number') {
+    form.append('limit', String(limit))
+  }
+  if (taskId) {
+    form.append('taskId', taskId)
+  }
   return unwrap<AisImportResult>(
     http.post('/v1/ais-records/import', form, {
-      timeout: 180000,
+      timeout: 0,
     }),
   )
 }

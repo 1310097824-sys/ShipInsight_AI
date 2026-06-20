@@ -83,6 +83,7 @@ defineEmits<{
 function actionTagType(action: string) {
   if (action === 'CREATE') return 'success'
   if (action === 'DELETE') return 'danger'
+  if (action === 'ARCHIVE') return 'warning'
   if (action === 'ROLLBACK') return 'warning'
   return 'info'
 }
@@ -94,6 +95,7 @@ function actionLabel(item: EntityVersionView) {
   if (item.action === 'CREATE') return '创建'
   if (item.action === 'UPDATE') return '更新'
   if (item.action === 'DELETE') return '删除'
+  if (item.action === 'ARCHIVE') return '归档'
   if (item.action === 'ROLLBACK') return '回滚'
   return item.action
 }

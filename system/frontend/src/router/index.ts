@@ -11,15 +11,18 @@ declare module 'vue-router' {
 const routes = [
   { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
   { path: '/register', component: () => import('@/views/RegisterView.vue'), meta: { public: true } },
+  { path: '/marine-traffic', component: () => import('@/views/MarineTrafficMapView.vue'), meta: { authority: 'OBS_READ' } },
   {
     path: '/',
     component: () => import('@/layouts/AppLayout.vue'),
     children: [
       { path: '', redirect: '/dashboard' },
       { path: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { authority: 'REPORT_READ' } },
-      { path: 'species', component: () => import('@/views/SpeciesView.vue'), meta: { authority: 'SPECIES_READ' } },
-      { path: 'species/:id', component: () => import('@/views/SpeciesDetailView.vue'), meta: { authority: 'SPECIES_READ' } },
-      { path: 'ecosystems', component: () => import('@/views/EcosystemView.vue'), meta: { authority: 'ECOSYSTEM_READ' } },
+      { path: 'vessels', component: () => import('@/views/VesselsView.vue'), meta: { authority: 'VESSEL_READ' } },
+      { path: 'vessels/:id', component: () => import('@/views/VesselDetailView.vue'), meta: { authority: 'VESSEL_READ' } },
+      { path: 'species', redirect: '/vessels' },
+      { path: 'species/:id', redirect: '/vessels' },
+      { path: 'ecosystems', redirect: '/dashboard' },
       { path: 'eco-map', component: () => import('@/views/EcoMapView.vue'), meta: { authority: 'OBS_READ' } },
       { path: 'observations', component: () => import('@/views/ObservationView.vue'), meta: { authority: 'OBS_READ' } },
       { path: 'assistant', component: () => import('@/views/AiAssistantView.vue') },
@@ -55,7 +58,13 @@ router.beforeEach((to) => {
   }
   const raw = localStorage.getItem(PROFILE_KEY)
   const authorities: string[] = raw ? JSON.parse(raw).authorities ?? [] : []
-  if (to.meta.authority && !authorities.includes(to.meta.authority)) {
+  const roles: string[] = raw ? JSON.parse(raw).roles ?? [] : []
+  const hasRequiredAuthority =
+    !to.meta.authority ||
+    authorities.includes(to.meta.authority) ||
+    roles.includes('ADMIN') ||
+    (to.meta.authority === 'VESSEL_READ' && authorities.includes('SPECIES_READ'))
+  if (!hasRequiredAuthority) {
     return '/dashboard'
   }
   return true

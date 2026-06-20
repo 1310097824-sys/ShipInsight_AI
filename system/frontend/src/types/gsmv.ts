@@ -114,6 +114,77 @@ export interface SpeciesDetailView extends SpeciesView {
   images: SpeciesImageView[]
 }
 
+export interface VesselTypeOption {
+  id: number
+  parentId?: number | null
+  code: string
+  name: string
+  description?: string
+}
+
+export interface VesselImageView {
+  id: number
+  url: string
+  originalFilename: string
+}
+
+export interface VesselView {
+  id: number
+  vesselName: string
+  mmsi?: string
+  imo?: string
+  callSign?: string
+  vesselTypeId?: number | null
+  vesselTypeName?: string
+  vesselTypePath?: string
+  flagState?: string
+  operatorName?: string
+  lengthM?: number | null
+  widthM?: number | null
+  draftM?: number | null
+  riskLevel?: string
+  navigationStatus?: string
+  usualRegion?: string
+  routeArea?: string
+  status: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface VesselDetailView extends VesselView {
+  ownerName?: string
+  grossTonnage?: number | null
+  deadweightTonnage?: number | null
+  homePort?: string
+  note?: string
+  sourceText?: string
+  images: VesselImageView[]
+}
+
+export interface VesselSavePayload {
+  vesselName: string
+  mmsi?: string
+  imo?: string
+  callSign?: string
+  vesselTypeId?: number | null
+  flagState?: string
+  operatorName?: string
+  ownerName?: string
+  lengthM?: number | null
+  widthM?: number | null
+  draftM?: number | null
+  grossTonnage?: number | null
+  deadweightTonnage?: number | null
+  riskLevel?: string
+  navigationStatus?: string
+  homePort?: string
+  usualRegion?: string
+  routeArea?: string
+  note?: string
+  sourceText?: string
+  status: number
+}
+
 export interface Ecosystem {
   id: number
   name: string
@@ -200,6 +271,21 @@ export interface AisImportResult {
   imported: number
   skipped: number
   limit: number
+}
+
+export interface AisImportProgress {
+  taskId: string
+  sourceFile: string
+  status: 'running' | 'completed' | 'failed' | string
+  bytesRead: number
+  totalBytes: number
+  imported: number
+  skipped: number
+  limit: number
+  progress: number
+  message: string
+  startedAt: string
+  updatedAt: string
 }
 
 export interface AisBatchOperationResult {

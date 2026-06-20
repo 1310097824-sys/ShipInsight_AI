@@ -17,6 +17,7 @@ public class EntityVersionService {
 
     public static final String ENTITY_TYPE_SPECIES = "SPECIES";
     public static final String ENTITY_TYPE_OBSERVATION = "OBSERVATION";
+    public static final String ENTITY_TYPE_VESSEL = "VESSEL";
 
     private final EntityVersionMapper entityVersionMapper;
     private final ObjectMapper objectMapper;
