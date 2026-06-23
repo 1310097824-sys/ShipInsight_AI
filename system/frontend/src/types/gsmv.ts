@@ -748,3 +748,57 @@ export interface QdrantStatusView {
   readyChunks: number
   errorMessage?: string
 }
+
+// ==================== Quiz ====================
+
+export interface QuizQuestion {
+  id: number
+  category: string
+  type: string
+  title: string
+  options: string
+  answer: string
+  explanation?: string
+  difficulty: string
+  status: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface QuizRecord {
+  id: number
+  userId: number
+  score: number
+  total: number
+  categories?: string
+  mode: string
+  startedAt: string
+  finishedAt?: string
+}
+
+// ==================== Quiz ====================
+
+export interface QuizQuestion {
+  id: number
+  category: string
+  type: string
+  title: string
+  options: string
+  answer: string
+  explanation?: string
+  difficulty: string
+  status: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface QuizRecord {
+  id: number
+  userId: number
+  score: number
+  total: number
+  categories?: string
+  mode: string
+  startedAt: string
+  finishedAt?: string
+}

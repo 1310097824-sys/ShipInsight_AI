@@ -94,6 +94,7 @@ import {
   Histogram,
   MapLocation,
   Notebook,
+  Reading,
   Setting,
   User,
 } from '@element-plus/icons-vue'
@@ -108,12 +109,13 @@ const authStore = useAuthStore()
 const menus = [
   { path: '/dashboard', label: '态势总览', icon: DataAnalysis, authority: 'REPORT_READ' },
   { path: '/vessels', label: '船舶档案', icon: Document, authority: 'VESSEL_READ' },
-  { path: '/eco-map', label: '航线地图', icon: MapLocation, authority: 'OBS_READ' },
+  { path: '/route-map', label: '航线地图', icon: MapLocation, authority: 'OBS_READ' },
   { path: '/observations', label: 'AIS 记录', icon: Notebook, authority: 'OBS_READ' },
   { path: '/ai-reviews', label: '异常复核', icon: Finished, authority: 'AI_REVIEW_READ' },
   { path: '/assistant', label: '智能分析', icon: ChatDotRound },
   { path: '/ai-reports', label: '分析报告', icon: Document, authority: 'REPORT_READ' },
   { path: '/rag-knowledge', label: 'AIS 知识库', icon: Notebook, authority: 'RAG_READ' },
+  { path: '/quiz', label: '知识问答', icon: Reading, authority: 'QUIZ_READ' },
   { path: '/reports', label: '统计报表', icon: Histogram, authority: 'REPORT_READ' },
   { path: '/audits', label: '审计日志', icon: Setting, authority: 'AUDIT_READ' },
   { path: '/users', label: '用户权限', icon: User, authority: 'USER_ADMIN' },
