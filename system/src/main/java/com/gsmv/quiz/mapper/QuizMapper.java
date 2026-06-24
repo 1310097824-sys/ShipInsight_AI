@@ -49,6 +49,9 @@ public interface QuizMapper {
     @Select("SELECT * FROM quiz_question WHERE id = #{id}")
     QuizQuestion findQuestionById(Long id);
 
+    @Select("SELECT COUNT(*) FROM quiz_question WHERE title = #{title}")
+    long countByTitle(@Param("title") String title);
+
     @Insert("INSERT INTO quiz_question (category, type, title, options, answer, explanation, difficulty) " +
             "VALUES (#{category}, #{type}, #{title}, #{options}, #{answer}, #{explanation}, #{difficulty})")
     @Options(useGeneratedKeys = true, keyProperty = "id")

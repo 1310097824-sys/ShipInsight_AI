@@ -5,6 +5,8 @@ param(
   [AllowEmptyString()]
   [string]$DeepSeekApiKey = '',
   [AllowEmptyString()]
+  [string]$BaiduMapAk = $(if ($env:BAIDU_MAP_AK) { $env:BAIDU_MAP_AK } else { [Environment]::GetEnvironmentVariable('BAIDU_MAP_AK', 'Machine') }),
+  [AllowEmptyString()]
   [string]$IucnApiToken = $(if ($env:IUCN_API_TOKEN) { $env:IUCN_API_TOKEN } else { [Environment]::GetEnvironmentVariable('IUCN_API_TOKEN', 'User') })
 )
 
@@ -159,11 +161,13 @@ foreach ($logFile in @($backendOut, $backendErr, $frontendOut, $frontendErr)) {
 
 $bailianKeyForRun = ConvertTo-CmdSetValue $BailianApiKey
 $deepSeekKeyForRun = ConvertTo-CmdSetValue $DeepSeekApiKey
+$baiduMapAkForRun = ConvertTo-CmdSetValue $BaiduMapAk
 $iucnTokenForRun = ConvertTo-CmdSetValue $IucnApiToken
 $backendEnvCommand = @(
   "set `"BAILIAN_API_KEY=$bailianKeyForRun`"",
   "set `"DASHSCOPE_API_KEY=$bailianKeyForRun`"",
   "set `"DEEPSEEK_API_KEY=$deepSeekKeyForRun`"",
+  "set `"BAIDU_MAP_AK=$baiduMapAkForRun`"",
   "set `"IUCN_API_TOKEN=$iucnTokenForRun`""
 ) -join ' && '
 

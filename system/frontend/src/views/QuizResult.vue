@@ -1,45 +1,57 @@
 <template>
-  <div class="quiz-result">
-    <div class="quiz-result__header">
-      <el-button link @click="router.push('/quiz')"><el-icon><ArrowLeft /></el-icon> 返回题库</el-button>
-    </div>
+  <div class="page-shell">
+    <section class="page-hero quiz-result-hero">
+      <div>
+        <h2>答题结果</h2>
+        <p>查看本次答题的得分、正确率和每道题的详细解析。</p>
+      </div>
+      <el-button link @click="router.push('/quiz')">
+        <el-icon><ArrowLeft /></el-icon> 返回题库
+      </el-button>
+    </section>
 
-    <div v-if="loading" class="quiz-result__loading">
+    <div v-if="loading" class="panel-card-loading">
       <el-skeleton :rows="6" animated />
     </div>
 
     <template v-else-if="result">
       <!-- Score Card -->
-      <div class="score-summary">
-        <div class="score-summary__ring">
-          <svg viewBox="0 0 120 120" width="120" height="120">
-            <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8" />
-            <circle
-              cx="60" cy="60" r="52"
-              fill="none"
-              :stroke="scoreColor"
-              stroke-width="8"
-              stroke-linecap="round"
-              :stroke-dasharray="circumference"
-              :stroke-dashoffset="dashOffset"
-              transform="rotate(-90 60 60)"
-              style="transition: stroke-dashoffset 1s ease"
-            />
-          </svg>
-          <div class="score-summary__text">
-            <strong>{{ result.score }}</strong>
-            <span>/ {{ result.total }}</span>
+      <el-card class="panel-card" shadow="never">
+        <div class="score-summary">
+          <div class="score-summary__ring">
+            <svg viewBox="0 0 120 120" width="120" height="120">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8" />
+              <circle
+                cx="60" cy="60" r="52"
+                fill="none"
+                :stroke="scoreColor"
+                stroke-width="8"
+                stroke-linecap="round"
+                :stroke-dasharray="circumference"
+                :stroke-dashoffset="dashOffset"
+                transform="rotate(-90 60 60)"
+                style="transition: stroke-dashoffset 1s ease"
+              />
+            </svg>
+            <div class="score-summary__text">
+              <strong>{{ result.score }}</strong>
+              <span>/ {{ result.total }}</span>
+            </div>
+          </div>
+          <div class="score-summary__info">
+            <div class="score-summary__grade" :class="'grade--' + gradeKey">{{ result.grade }}</div>
+            <div class="score-summary__pct">正确率 {{ Math.round((result.score / result.total) * 100) }}%</div>
           </div>
         </div>
-        <div class="score-summary__info">
-          <div class="score-summary__grade" :class="'grade--' + gradeKey">{{ result.grade }}</div>
-          <div class="score-summary__pct">正确率 {{ Math.round((result.score / result.total) * 100) }}%</div>
-        </div>
-      </div>
+      </el-card>
 
       <!-- Detail List -->
-      <div class="result-detail-list">
-        <h3>答题详情与解析</h3>
+      <el-card class="panel-card" shadow="never">
+        <template #header>
+          <div class="panel-header">
+            <strong>答题详情与解析</strong>
+          </div>
+        </template>
         <div
           v-for="(item, idx) in result.details"
           :key="item.questionId"
@@ -78,7 +90,7 @@
             {{ item.explanation }}
           </div>
         </div>
-      </div>
+      </el-card>
     </template>
   </div>
 </template>
@@ -150,34 +162,35 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.quiz-result {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 24px;
+.quiz-result-hero {
+  align-items: center;
+  padding: 18px 28px;
 }
-.quiz-result__header { margin-bottom: 20px; }
-.quiz-result__header :deep(.el-button) { color: rgba(224, 244, 235, 0.7); }
 
-/* ===== Score Summary Card ===== */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.panel-header strong {
+  font-size: 16px;
+  letter-spacing: 0.01em;
+}
+
+/* ===== Score Summary ===== */
 .score-summary {
   display: flex;
   align-items: center;
   gap: 32px;
-  background:
-    linear-gradient(135deg, rgba(0, 229, 255, 0.06), rgba(124, 60, 255, 0.04)),
-    rgba(10, 16, 35, 0.85);
-  border: 1px solid rgba(0, 229, 255, 0.18);
-  border-radius: 20px;
-  padding: 32px;
-  margin-bottom: 28px;
-  box-shadow:
-    0 8px 40px rgba(0, 4, 18, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 8px;
 }
 .score-summary__ring {
   position: relative;
   width: 120px;
   height: 120px;
+  flex-shrink: 0;
 }
 .score-summary__ring svg circle:first-child {
   stroke: rgba(255, 255, 255, 0.08) !important;
@@ -192,30 +205,23 @@ onMounted(async () => {
 }
 .score-summary__text strong {
   font-size: 34px;
-  background: linear-gradient(90deg, #00e5ff, #4ff0b5);
+  background: linear-gradient(90deg, var(--gsmv-primary), #4ff0b5);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 .score-summary__text span {
   font-size: 14px;
-  color: rgba(224, 244, 235, 0.4);
+  color: var(--gsmv-muted);
 }
 .score-summary__grade { font-size: 30px; font-weight: 700; letter-spacing: 2px; }
-.score-summary__pct { font-size: 16px; color: rgba(224, 244, 235, 0.5); margin-top: 4px; }
+.score-summary__pct { font-size: 16px; color: var(--gsmv-muted); margin-top: 4px; }
 .grade--excellent { color: #4ff0b5; text-shadow: 0 0 20px rgba(79, 240, 181, 0.4); }
-.grade--good      { color: #00e5ff; text-shadow: 0 0 20px rgba(0, 229, 255, 0.4); }
+.grade--good      { color: var(--gsmv-primary); text-shadow: 0 0 20px rgba(0, 229, 255, 0.4); }
 .grade--pass      { color: #ffc857; text-shadow: 0 0 16px rgba(255, 200, 87, 0.35); }
-.grade--fail      { color: #ff6b8a; text-shadow: 0 0 16px rgba(255, 107, 138, 0.35); }
+.grade--fail      { color: var(--gsmv-danger); text-shadow: 0 0 16px rgba(255, 107, 138, 0.35); }
 
-/* ===== Detail List ===== */
-.result-detail-list h3 {
-  font-size: 18px;
-  margin: 0 0 18px;
-  color: #e8f4ff;
-  font-weight: 600;
-}
-
+/* ===== Result Items ===== */
 .result-item {
   background:
     linear-gradient(135deg, rgba(0, 229, 255, 0.03), rgba(124, 60, 255, 0.02)),
@@ -252,7 +258,7 @@ onMounted(async () => {
   font-weight: 700;
   flex-shrink: 0;
   margin-top: 2px;
-  color: rgba(224, 244, 235, 0.5);
+  color: var(--gsmv-muted);
 }
 .result-item.is-correct .result-item__num {
   background: rgba(79, 240, 181, 0.15);
@@ -305,7 +311,7 @@ onMounted(async () => {
   border-color: rgba(79, 240, 181, 0.25);
 }
 .option--chosen-correct .option-dot {
-  background: linear-gradient(135deg, #00e5ff, #4ff0b5);
+  background: linear-gradient(135deg, var(--gsmv-primary), #4ff0b5);
   color: #0a1628;
   border-color: transparent;
 }
@@ -339,7 +345,7 @@ onMounted(async () => {
   padding-left: 40px;
   margin: 12px 0;
   font-size: 14px;
-  color: rgba(224, 244, 235, 0.55);
+  color: var(--gsmv-muted);
 }
 .text-success { color: #4ff0b5 !important; font-weight: 600; }
 .text-danger  { color: #ff6b8a !important; font-weight: 600; }
@@ -362,7 +368,14 @@ onMounted(async () => {
 }
 .result-item__explanation .el-icon {
   margin-top: 3px;
-  color: #00e5ff;
+  color: var(--gsmv-primary);
   flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .score-summary {
+    flex-direction: column;
+    text-align: center;
+  }
 }
 </style>

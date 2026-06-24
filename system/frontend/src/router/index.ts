@@ -34,6 +34,7 @@ const routes = [
       { path: 'users', component: () => import('@/views/UsersView.vue'), meta: { authority: 'USER_ADMIN' } },
       { path: 'profile', component: () => import('@/views/ProfileView.vue') },
       { path: 'quiz', component: () => import('@/views/QuizHome.vue'), meta: { authority: 'QUIZ_READ' } },
+      { path: 'quiz/ai', component: () => import('@/views/QuizAiAssistant.vue') },
       { path: 'quiz/exam', component: () => import('@/views/QuizExam.vue'), meta: { authority: 'QUIZ_READ' } },
       { path: 'quiz/result', component: () => import('@/views/QuizResult.vue'), meta: { authority: 'QUIZ_READ' } },
       { path: 'quiz/manage', component: () => import('@/views/QuizManage.vue'), meta: { authority: 'QUIZ_WRITE' } },

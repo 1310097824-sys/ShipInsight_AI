@@ -1,78 +1,86 @@
 <template>
-  <div class="quiz-manage">
-    <div class="quiz-manage__header">
-      <h2>题库管理</h2>
-      <el-button type="primary" @click="showCreateDialog">+ 添加题目</el-button>
-    </div>
+  <div class="page-shell">
+    <section class="page-hero">
+      <div>
+        <h2>题库管理</h2>
+        <p>维护知识问答题目，支持单选、多选、判断和填空四种题型，可按分类、题型、难度筛选和搜索。</p>
+      </div>
+      <el-button type="primary" @click="showCreateDialog">
+        <el-icon><Plus /></el-icon>
+        添加题目
+      </el-button>
+    </section>
 
-    <!-- Filters -->
-    <div class="quiz-manage__filters">
-      <el-select v-model="filters.category" placeholder="分类" clearable @change="loadData" style="width: 130px">
-        <el-option label="船舶" value="SHIP" />
-        <el-option label="天气" value="WEATHER" />
-        <el-option label="海域" value="SEA_AREA" />
-      </el-select>
-      <el-select v-model="filters.type" placeholder="题型" clearable @change="loadData" style="width: 130px">
-        <el-option label="单选" value="SINGLE" />
-        <el-option label="多选" value="MULTI" />
-        <el-option label="判断" value="JUDGE" />
-        <el-option label="填空" value="FILL" />
-      </el-select>
-      <el-select v-model="filters.difficulty" placeholder="难度" clearable @change="loadData" style="width: 130px">
-        <el-option label="简单" value="EASY" />
-        <el-option label="中等" value="MEDIUM" />
-        <el-option label="困难" value="HARD" />
-      </el-select>
-      <el-input v-model="filters.keyword" placeholder="搜索题目" clearable @clear="loadData" @keyup.enter="loadData" style="width: 220px" />
-    </div>
+    <!-- Filters + Table -->
+    <el-card class="panel-card" shadow="never">
+      <div class="toolbar toolbar--wrap">
+        <el-select v-model="filters.category" placeholder="分类" clearable @change="loadData" style="width: 130px">
+          <el-option label="船舶" value="SHIP" />
+          <el-option label="天气" value="WEATHER" />
+          <el-option label="海域" value="SEA_AREA" />
+        </el-select>
+        <el-select v-model="filters.type" placeholder="题型" clearable @change="loadData" style="width: 130px">
+          <el-option label="单选" value="SINGLE" />
+          <el-option label="多选" value="MULTI" />
+          <el-option label="判断" value="JUDGE" />
+          <el-option label="填空" value="FILL" />
+        </el-select>
+        <el-select v-model="filters.difficulty" placeholder="难度" clearable @change="loadData" style="width: 130px">
+          <el-option label="简单" value="EASY" />
+          <el-option label="中等" value="MEDIUM" />
+          <el-option label="困难" value="HARD" />
+        </el-select>
+        <el-input v-model="filters.keyword" placeholder="搜索题目" clearable @clear="loadData" @keyup.enter="loadData" style="width: 220px" />
+      </div>
 
-    <!-- Table -->
-    <el-table :data="questions" stripe v-loading="loading">
-      <el-table-column label="ID" width="60" prop="id" />
-      <el-table-column label="分类" width="80">
-        <template #default="{ row }">
-          <el-tag :type="catTag(row.category)" size="small">{{ catLabel(row.category) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="题型" width="80">
-        <template #default="{ row }">
-          <el-tag :type="typeTag(row.type)" size="small">{{ typeLabel(row.type) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="题目" min-width="300" show-overflow-tooltip prop="title" />
-      <el-table-column label="难度" width="80">
-        <template #default="{ row }">
-          <el-tag :type="diffTag(row.difficulty)" size="small" effect="plain">
-            {{ diffLabel(row.difficulty) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="80">
-        <template #default="{ row }">
-          <el-switch
-            :model-value="row.status === 1"
-            @change="toggleStatus(row)"
-            size="small"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="editQuestion(row)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="deleteQuestionAction(row.id)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+      <el-table :data="questions" stripe v-loading="loading">
+        <el-table-column label="ID" width="60" prop="id" />
+        <el-table-column label="分类" width="80">
+          <template #default="{ row }">
+            <el-tag :type="catTag(row.category)" size="small">{{ catLabel(row.category) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="题型" width="80">
+          <template #default="{ row }">
+            <el-tag :type="typeTag(row.type)" size="small">{{ typeLabel(row.type) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="题目" min-width="300" show-overflow-tooltip prop="title" />
+        <el-table-column label="难度" width="80">
+          <template #default="{ row }">
+            <el-tag :type="diffTag(row.difficulty)" size="small" effect="plain">
+              {{ diffLabel(row.difficulty) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="80">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.status === 1"
+              @change="toggleStatus(row)"
+              size="small"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="editQuestion(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="deleteQuestionAction(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <el-pagination
-      v-if="total > 0"
-      v-model:current-page="page"
-      :page-size="size"
-      :total="total"
-      layout="prev, pager, next"
-      @current-change="loadData"
-      style="margin-top: 16px; justify-content: center"
-    />
+      <div class="table-footer">
+        <el-pagination
+          v-if="total > 0"
+          v-model:current-page="page"
+          :page-size="size"
+          :total="total"
+          layout="total, prev, pager, next"
+          @current-change="loadData"
+        />
+      </div>
+    </el-card>
 
     <!-- Create/Edit Dialog -->
     <el-dialog
@@ -133,6 +141,7 @@
 </template>
 
 <script setup lang="ts">
+import { Plus } from '@element-plus/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchQuestions, createQuestion, updateQuestion, deleteQuestion, toggleQuestion } from '@/api/quiz'
@@ -344,22 +353,9 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.quiz-manage {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px;
-}
-.quiz-manage__header {
+.table-footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-.quiz-manage__header h2 { margin: 0; }
-.quiz-manage__filters {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 </style>

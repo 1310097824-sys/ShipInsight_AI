@@ -54,6 +54,35 @@
           </div>
         </section>
 
+        <section class="dashboard-window dashboard-window__column dashboard-weather-panel">
+          <header class="dashboard-window__header dashboard-window__header--compact">
+            <span class="dashboard-window__eyebrow">Weather Analysis</span>
+            <strong>今日航海天气 · {{ weatherCity }}</strong>
+            <span class="dashboard-weather-panel__time">{{ weatherTime }}</span>
+          </header>
+          <div class="dashboard-weather-panel__body">
+            <div v-if="weatherLoading" class="dashboard-weather-panel__status">
+              <span class="dashboard-weather-panel__spin" />正在获取天气数据...
+            </div>
+            <div v-else-if="weatherError" class="dashboard-weather-panel__status dashboard-weather-panel__error">
+              ⚠️ {{ weatherError }}
+            </div>
+            <div v-else-if="weatherResult" class="dashboard-weather-panel__result">
+              <div class="dashboard-weather-panel__interpretation">
+                <strong>AI 出海建议</strong>
+                <p>{{ weatherResult.aiInterpretation || '暂无解读数据' }}</p>
+              </div>
+              <div v-if="weatherResult.weatherData" class="dashboard-weather-panel__raw">
+                <strong>实时天气数据</strong>
+                <pre>{{ weatherResult.weatherData }}</pre>
+              </div>
+            </div>
+            <p class="dashboard-weather-panel__hint">
+              💡 如果想要获取别的地方的天气，可以试试在<router-link to="/quiz/ai">知识问答模块</router-link>中询问 AI 助手哦！
+            </p>
+          </div>
+        </section>
+
         <section class="dashboard-window dashboard-window__column">
           <header class="dashboard-window__header dashboard-window__header--compact">
             <span class="dashboard-window__eyebrow">Port Focus</span>
@@ -154,6 +183,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { EChartsOption } from 'echarts'
 import { fetchDashboardSummary, fetchObservationActivity, fetchObservationTrend } from '@/api/reports'
+import { fetchWeatherInterpret } from '@/api/quiz'
 import ChartPanel from '@/components/ChartPanel.vue'
 import { listenDataChanged } from '@/utils/dataSync'
 import { addPreferredTileLayer, toMapDisplayPoint } from '@/utils/mapProvider'
@@ -426,6 +456,43 @@ const alerts = [
     detail: '远洋船队速度分布正常，未见大范围绕航信号。',
   },
 ]
+
+const weatherCity = ref('湛江')
+const weatherTime = ref('')
+const weatherLoading = ref(true)
+const weatherError = ref<string | null>(null)
+const weatherResult = ref<Record<string, unknown> | null>(null)
+let weatherTimer: ReturnType<typeof setInterval> | null = null
+let timeTimer: ReturnType<typeof setInterval> | null = null
+
+function updateWeatherTime() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  const h = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  const s = String(now.getSeconds()).padStart(2, '0')
+  weatherTime.value = `${y}-${m}-${d} ${h}:${min}:${s}`
+}
+
+async function loadWeather() {
+  weatherLoading.value = true
+  weatherError.value = null
+  try {
+    const data = await fetchWeatherInterpret(weatherCity.value)
+    if (data.akConfigured === false) {
+      weatherError.value = String(data.error || '百度地图 AK 未配置')
+    } else if (data.error) {
+      weatherError.value = String(data.error)
+    }
+    weatherResult.value = data as Record<string, unknown>
+  } catch (e: unknown) {
+    weatherError.value = e instanceof Error ? e.message : '天气数据加载失败'
+  } finally {
+    weatherLoading.value = false
+  }
+}
 
 const fallbackTrend: NameValuePoint[] = [
   { name: '05-19', value: 28 },
@@ -825,6 +892,9 @@ watch(selectedMapMode, () => {
 onMounted(async () => {
   await nextTick()
   initializeMap()
+  updateWeatherTime()
+  timeTimer = setInterval(updateWeatherTime, 1000)
+  void loadWeather()
   stopDataSync = listenDataChanged((detail) => {
     if (['species', 'observation', 'ecosystem', 'user'].includes(detail.type)) {
       void loadDashboard()
@@ -837,6 +907,14 @@ onBeforeUnmount(() => {
   stopDataSync?.()
   resizeObserver?.disconnect()
   resizeObserver = null
+  if (weatherTimer) {
+    clearInterval(weatherTimer)
+    weatherTimer = null
+  }
+  if (timeTimer) {
+    clearInterval(timeTimer)
+    timeTimer = null
+  }
   overlayLayer = null
   map?.remove()
   map = null
@@ -1277,6 +1355,127 @@ onBeforeUnmount(() => {
 
 .dashboard-alert.is-stable span {
   color: var(--gsmv-accent);
+}
+
+.dashboard-weather-panel__time {
+  display: block;
+  margin-top: 4px;
+  color: rgba(232, 243, 255, 0.56);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+.dashboard-weather-panel__body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.dashboard-weather-panel__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(232, 243, 255, 0.72);
+  font-size: 13px;
+  min-height: 80px;
+}
+
+.dashboard-weather-panel__spin {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0, 229, 255, 0.28);
+  border-top-color: var(--gsmv-primary);
+  border-radius: 50%;
+  animation: dashboard-spin 0.8s linear infinite;
+}
+
+.dashboard-weather-panel__error {
+  color: var(--gsmv-danger);
+  line-height: 1.55;
+}
+
+.dashboard-weather-panel__result {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-weather-panel__interpretation {
+  padding: 12px;
+  border: 1px solid rgba(32, 255, 159, 0.22);
+  border-radius: 14px;
+  background: rgba(32, 255, 159, 0.08);
+}
+
+.dashboard-weather-panel__interpretation strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--gsmv-accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.dashboard-weather-panel__interpretation p {
+  margin: 0;
+  color: #e8f3ff;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.dashboard-weather-panel__raw {
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dashboard-weather-panel__raw strong {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(232, 243, 255, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dashboard-weather-panel__raw pre {
+  margin: 0;
+  color: rgba(232, 243, 255, 0.72);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+.dashboard-weather-panel__hint {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 184, 77, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 184, 77, 0.08);
+  color: rgba(232, 243, 255, 0.68);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.dashboard-weather-panel__hint a {
+  color: var(--gsmv-primary);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.dashboard-weather-panel__hint a:hover {
+  text-decoration: underline;
+}
+
+@keyframes dashboard-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .dashboard-lower-grid {
