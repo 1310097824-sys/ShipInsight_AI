@@ -26,6 +26,35 @@ public record AisRecordView(
         String sourceFile,
         Long importedByUserId,
         String importedByName,
-        LocalDateTime importedAt
+        LocalDateTime importedAt,
+        AisLinkedVesselView linkedVessel
 ) {
+    public AisRecordView withLinkedVessel(AisLinkedVesselView linkedVessel) {
+        return new AisRecordView(
+                id,
+                mmsi,
+                baseDateTime,
+                longitude,
+                latitude,
+                sog,
+                cog,
+                heading,
+                vesselName,
+                imo,
+                callSign,
+                vesselType,
+                status,
+                length,
+                width,
+                draft,
+                cargo,
+                transceiver,
+                note,
+                sourceFile,
+                importedByUserId,
+                importedByName,
+                importedAt,
+                linkedVessel
+        );
+    }
 }

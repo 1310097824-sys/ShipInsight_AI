@@ -269,10 +269,6 @@ public class RagSchemaBootstrapRunner implements ApplicationRunner {
 
     private void seedSources(Connection connection) throws SQLException {
         execute(connection, "INSERT IGNORE INTO rag_source (code, name, source_type, base_url, enabled) VALUES ('LOCAL_FOLDER', 'Local folder corpus', 'LOCAL_FOLDER', NULL, 1)");
-        execute(connection, "INSERT IGNORE INTO rag_source (code, name, source_type, base_url, enabled) VALUES ('OBIS', 'Ocean Biodiversity Information System', 'EXTERNAL_API', 'https://api.obis.org', 1)");
-        execute(connection, "INSERT IGNORE INTO rag_source (code, name, source_type, base_url, enabled) VALUES ('GBIF', 'Global Biodiversity Information Facility', 'EXTERNAL_API', 'https://api.gbif.org', 1)");
-        execute(connection, "INSERT IGNORE INTO rag_source (code, name, source_type, base_url, enabled) VALUES ('WORMS', 'World Register of Marine Species', 'EXTERNAL_API', 'https://www.marinespecies.org/rest', 1)");
-        execute(connection, "INSERT IGNORE INTO rag_source (code, name, source_type, base_url, enabled) VALUES ('IUCN', 'IUCN Red List', 'EXTERNAL_API', 'https://api.iucnredlist.org', 1)");
         execute(connection, "INSERT IGNORE INTO rag_source (code, name, source_type, base_url, enabled) VALUES ('WEB_PDF', 'Whitelist web documents', 'WEB_DOCUMENT', NULL, 1)");
     }
 }

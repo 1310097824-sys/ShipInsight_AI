@@ -6,11 +6,11 @@
           <span class="auth-visual__eyebrow">Join ShipInsight</span>
           <h1 class="auth-visual__title">申请加入<br />AIS 态势网络</h1>
           <p class="auth-visual__desc">
-            面向学生与公众开放注册申请。审核通过后，你可以参与 AIS 记录录入、船舶资料查看与航线态势数据浏览。
+            面向船舶运营方与公众观察员开放注册申请。审核通过后，你可以查看 AIS 船舶交通态势、管理船舶档案与航线数据。
           </p>
           <div class="auth-visual__chips">
-            <span>学生申请</span>
-            <span>公众参与</span>
+            <span>船舶运营</span>
+            <span>态势观察</span>
             <span>审核准入</span>
           </div>
         </div>
@@ -22,7 +22,7 @@
           </div>
           <div class="auth-metric">
             <strong>角色化</strong>
-            <span>根据学生、公众等身份分配不同可见范围与操作权限。</span>
+            <span>根据船舶运营方、公众观察员等身份分配不同数据可见范围与操作权限。</span>
           </div>
           <div class="auth-metric">
             <strong>可追踪</strong>
@@ -43,8 +43,8 @@
       <el-form label-position="top" @submit.prevent="handleSubmit">
         <el-form-item label="申请身份">
           <el-radio-group v-model="form.roleCode">
-            <el-radio value="STUDENT">学生</el-radio>
-            <el-radio value="PUBLIC">公众</el-radio>
+            <el-radio value="OPERATOR">船舶运营方</el-radio>
+            <el-radio value="OBSERVER">公众观察员</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="用户名">
@@ -62,6 +62,35 @@
         <el-form-item label="密码">
           <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" />
         </el-form-item>
+        <el-form-item label="图形验证码">
+          <div class="captcha-row">
+            <el-input
+              v-model="form.captchaCode"
+              class="captcha-input"
+              maxlength="5"
+              placeholder="请输入验证码"
+              @keyup.enter="handleSubmit"
+            />
+            <button
+              class="captcha-image-button"
+              type="button"
+              :disabled="captchaLoading"
+              title="点击刷新验证码"
+              @click="loadCaptcha"
+            >
+              <img v-if="captcha.imageBase64" :src="captcha.imageBase64" alt="图形验证码" />
+              <span v-else>{{ captchaLoading ? '加载中' : '刷新' }}</span>
+            </button>
+            <el-button
+              class="captcha-refresh"
+              :icon="RefreshRight"
+              :loading="captchaLoading"
+              circle
+              aria-label="刷新验证码"
+              @click="loadCaptcha"
+            />
+          </div>
+        </el-form-item>
         <el-button type="primary" size="large" class="auth-card__button" :loading="submitting" @click="handleSubmit">
           提交注册申请
         </el-button>
@@ -77,26 +106,43 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { RefreshRight } from '@element-plus/icons-vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { register } from '@/api/auth'
+import { fetchCaptcha, register } from '@/api/auth'
 
 const router = useRouter()
 const submitting = ref(false)
+const captchaLoading = ref(false)
 
 const form = reactive({
-  roleCode: 'STUDENT' as 'STUDENT' | 'PUBLIC',
+  roleCode: 'OPERATOR' as 'OPERATOR' | 'OBSERVER',
   username: '',
   displayName: '',
   email: '',
   phone: '',
   password: '',
+  captchaCode: '',
+})
+
+const captcha = reactive({
+  captchaId: '',
+  imageBase64: '',
 })
 
 async function handleSubmit() {
   if (!form.username.trim() || !form.displayName.trim() || !form.password.trim()) {
     ElMessage.warning('请填写完整的注册信息')
+    return
+  }
+  if (!form.captchaCode.trim()) {
+    ElMessage.warning('请输入图形验证码')
+    return
+  }
+  if (!captcha.captchaId) {
+    ElMessage.warning('验证码加载失败，请刷新验证码后重试')
+    await loadCaptcha()
     return
   }
 
@@ -109,19 +155,105 @@ async function handleSubmit() {
       email: form.email.trim() || undefined,
       phone: form.phone.trim() || undefined,
       password: form.password,
+      captchaId: captcha.captchaId,
+      captchaCode: form.captchaCode.trim(),
     })
     ElMessage.success('注册申请已提交，请等待管理员审核')
     router.push('/login')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '注册申请提交失败')
+    await loadCaptcha()
   } finally {
     submitting.value = false
   }
 }
+
+async function loadCaptcha() {
+  captchaLoading.value = true
+  try {
+    const nextCaptcha = await fetchCaptcha()
+    captcha.captchaId = nextCaptcha.captchaId
+    captcha.imageBase64 = nextCaptcha.imageBase64
+    form.captchaCode = ''
+  } catch (error) {
+    captcha.captchaId = ''
+    captcha.imageBase64 = ''
+    ElMessage.error(error instanceof Error ? error.message : '验证码加载失败')
+  } finally {
+    captchaLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void loadCaptcha()
+})
 </script>
 
 <style scoped>
 .auth-visual--register {
   background-position: center 42%;
+}
+
+.captcha-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 154px 38px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+.captcha-input {
+  min-width: 0;
+}
+
+.captcha-image-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 154px;
+  height: 46px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 229, 255, 0.28);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.1), rgba(124, 60, 255, 0.08)),
+    rgba(4, 14, 36, 0.76);
+  color: var(--gsmv-text);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 22px rgba(0, 4, 18, 0.2);
+}
+
+.captcha-image-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.captcha-image-button img {
+  display: block;
+  width: 154px;
+  height: 46px;
+}
+
+.captcha-refresh {
+  width: 38px;
+  height: 38px;
+}
+
+@media (max-width: 560px) {
+  .captcha-row {
+    grid-template-columns: minmax(0, 1fr) 42px;
+  }
+
+  .captcha-image-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .captcha-image-button img {
+    width: 154px;
+  }
 }
 </style>

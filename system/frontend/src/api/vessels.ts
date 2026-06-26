@@ -1,5 +1,7 @@
 import { http, unwrap } from '@/api/http'
 import type {
+  AisRecordView,
+  AisVesselSummaryView,
   EntityVersionView,
   PageResponse,
   VesselDetailView,
@@ -28,6 +30,14 @@ export function fetchVesselDetail(id: number) {
 
 export function fetchVesselVersions(id: number) {
   return unwrap<EntityVersionView[]>(http.get(`/v1/vessels/${id}/versions`))
+}
+
+export function fetchVesselAisSummary(id: number) {
+  return unwrap<AisVesselSummaryView>(http.get(`/v1/vessels/${id}/ais-summary`))
+}
+
+export function fetchVesselAisRecords(id: number, params: { page: number; size: number }) {
+  return unwrap<PageResponse<AisRecordView>>(http.get(`/v1/vessels/${id}/ais-records`, { params }))
 }
 
 export function fetchVesselTypes() {

@@ -5,8 +5,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -29,12 +31,28 @@ public final class AiReportPdfExporter {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             PDFont font = loadFont(document);
             PdfWriter writer = new PdfWriter(document, font);
+            AiReportDtos.AiReportMetrics metrics = report.metrics();
             writer.title(report.title());
-            writer.line("报告类型: " + report.reportType() + "    时间范围: 近 " + report.days() + " 天");
-            writer.line("生成时间: " + report.createdAt() + "    生成人: " + nullSafe(report.creatorName()));
+            writer.line("报告类型: " + reportTypeLabel(report.reportType()) + "    时间范围: 近 " + report.days() + " 天");
+            writer.line("生成时间: " + formatDateTime(report.createdAt()) + "    生成人: " + nullSafe(report.creatorName()));
+            if (metrics != null) {
+                writer.line("统计窗口: " + formatDateTime(metrics.periodStart()) + " 至 " + formatDateTime(metrics.periodEnd()));
+            }
             writer.blank();
             writer.section("摘要");
             writer.line(report.summary());
+            if (metrics != null) {
+                writer.section("AIS 指标");
+                writer.line("AIS 记录总数: " + formatCount(metrics.totalRecords())
+                        + "    唯一船舶数: " + formatCount(metrics.uniqueVesselCount())
+                        + "    最新数据集: " + nullSafe(metrics.latestDatasetDate()));
+                writer.line("风险信号: " + formatCount(metrics.riskSignalCount())
+                        + "    低速: " + formatCount(metrics.lowSpeedCount())
+                        + "    停泊/近静止: " + formatCount(metrics.stoppedCount())
+                        + "    异常备注: " + formatCount(metrics.abnormalNoteCount()));
+                writer.line("AIS 日期峰值: " + summarizeDateStats(metrics.topDates()));
+                writer.line("导入人排行: " + summarizeRankingStats(metrics.topImporters()));
+            }
             writer.list("重点发现", report.highlights());
             writer.list("风险提示", report.risks());
             writer.list("建议行动", report.recommendations());
@@ -59,6 +77,44 @@ public final class AiReportPdfExporter {
             }
         }
         return PDType1Font.HELVETICA;
+    }
+
+    private static String reportTypeLabel(String reportType) {
+        return switch (reportType) {
+            case "WEEKLY" -> "AIS 周报";
+            case "CUSTOM" -> "AIS 专题报告";
+            default -> "AIS 月报";
+        };
+    }
+
+    private static String summarizeDateStats(List<AiReportDtos.AiReportDateStat> stats) {
+        if (stats == null || stats.isEmpty()) {
+            return "暂无";
+        }
+        return stats.stream()
+                .limit(5)
+                .map(item -> item.datasetDate() + "=" + formatCount(item.recordCount()))
+                .toList()
+                .toString();
+    }
+
+    private static String summarizeRankingStats(List<AiReportDtos.AiReportRankingStat> stats) {
+        if (stats == null || stats.isEmpty()) {
+            return "暂无";
+        }
+        return stats.stream()
+                .limit(5)
+                .map(item -> nullSafe(item.label()) + "=" + formatCount(item.recordCount()))
+                .toList()
+                .toString();
+    }
+
+    private static String formatDateTime(LocalDateTime value) {
+        return value == null ? "" : value.toString().replace('T', ' ');
+    }
+
+    private static String formatCount(long value) {
+        return String.format(Locale.ROOT, "%,d", value);
     }
 
     private static String nullSafe(String value) {
@@ -148,12 +204,9 @@ public final class AiReportPdfExporter {
                     .replace("\r\n", "\n")
                     .replace('\r', '\n')
                     .replace('\t', ' ')
-                    .replace('•', '-')
-                    .replace('●', '-')
-                    .replace('▪', '-')
-                    .replace('◆', '-')
                     .replace('–', '-')
                     .replace('—', '-')
+                    .replace('•', '-')
                     .replace('“', '"')
                     .replace('”', '"')
                     .replace('‘', '\'')
@@ -182,9 +235,7 @@ public final class AiReportPdfExporter {
             try {
                 font.getStringWidth(value);
                 return true;
-            } catch (IllegalArgumentException exception) {
-                return false;
-            } catch (IOException exception) {
+            } catch (IllegalArgumentException | IOException exception) {
                 return false;
             }
         }

@@ -13,7 +13,7 @@ public record AiProperties(
         int assistantSpeciesLimit
 ) {
 
-        public record Bailian(
+    public record Bailian(
             boolean enabled,
             String apiKey,
             String baseUrl,

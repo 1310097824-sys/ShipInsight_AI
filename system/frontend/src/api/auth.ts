@@ -11,7 +11,19 @@ export function register(payload: {
   displayName: string
   email?: string
   phone?: string
-  roleCode: 'STUDENT' | 'PUBLIC'
+  roleCode: 'OPERATOR' | 'OBSERVER'
+  captchaId: string
+  captchaCode: string
 }) {
   return unwrap<void>(http.post('/v1/auth/register', payload))
+}
+
+export interface CaptchaResponse {
+  captchaId: string
+  imageBase64: string
+  expiresInSeconds: number
+}
+
+export function fetchCaptcha() {
+  return unwrap<CaptchaResponse>(http.get('/v1/auth/captcha'))
 }

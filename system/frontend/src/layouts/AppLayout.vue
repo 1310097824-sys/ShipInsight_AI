@@ -49,7 +49,7 @@
         </div>
 
         <div class="app-header__actions">
-          <RouterLink v-if="hasMenuAccess('OBS_READ')" to="/marine-traffic" class="marine-map-chip" title="打开海上交通图">
+          <RouterLink v-if="hasMenuAccess('OBS_READ')" to="/marine-traffic" class="traffic-map-chip" title="打开海上交通图">
             <el-icon><MapLocation /></el-icon>
             <span>海上交通图</span>
           </RouterLink>
@@ -534,7 +534,7 @@ function handleLogout() {
 }
 
 .profile-chip,
-.marine-map-chip {
+.traffic-map-chip {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -551,11 +551,11 @@ function handleLogout() {
     box-shadow 0.18s ease;
 }
 
-.marine-map-chip {
+.traffic-map-chip {
   padding: 9px 15px;
 }
 
-.marine-map-chip .el-icon {
+.traffic-map-chip .el-icon {
   width: 20px;
   height: 20px;
   color: var(--gsmv-primary);
@@ -575,7 +575,7 @@ function handleLogout() {
 }
 
 .profile-chip span,
-.marine-map-chip span {
+.traffic-map-chip span {
   color: var(--gsmv-text);
   font-size: 14px;
   font-weight: 600;

@@ -1,4 +1,4 @@
-export type DataChangeType = 'ecosystem' | 'observation' | 'user' | 'species' | 'vessel' | 'aiReview'
+export type DataChangeType = 'shippingZone' | 'aisRecord' | 'user' | 'vesselProfile' | 'vessel' | 'aiReview'
 
 export interface DataChangeDetail {
   type: DataChangeType

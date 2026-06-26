@@ -6,7 +6,7 @@ Add-Type -AssemblyName System.Drawing
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'GSMV API Keys'
 $form.StartPosition = 'CenterScreen'
-$form.Size = New-Object System.Drawing.Size(520, 360)   
+$form.Size = New-Object System.Drawing.Size(520, 360)
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.MinimizeBox = $false
@@ -20,13 +20,12 @@ $title.Location = New-Object System.Drawing.Point(28, 22)
 $form.Controls.Add($title)
 
 $tip = New-Object System.Windows.Forms.Label
-$tip.Text = 'You can leave all fields empty. Keys are used only for this launch.'
+$tip.Text = 'You can leave both fields empty. Keys are used only for this launch.'
 $tip.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $tip.AutoSize = $true
 $tip.Location = New-Object System.Drawing.Point(30, 58)
 $form.Controls.Add($tip)
 
-# ----- Bailian -----
 $bailianLabel = New-Object System.Windows.Forms.Label
 $bailianLabel.Text = 'Bailian API Key'
 $bailianLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -41,7 +40,6 @@ $bailianBox.Size = New-Object System.Drawing.Size(440, 26)
 $bailianBox.UseSystemPasswordChar = $true
 $form.Controls.Add($bailianBox)
 
-# ----- DeepSeek -----
 $deepseekLabel = New-Object System.Windows.Forms.Label
 $deepseekLabel.Text = 'DeepSeek API Key'
 $deepseekLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -60,26 +58,26 @@ $baiduLabel = New-Object System.Windows.Forms.Label
 $baiduLabel.Text = 'BAIDU_MAP_AK'
 $baiduLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $baiduLabel.AutoSize = $true
-$baiduLabel.Location = New-Object System.Drawing.Point(30, 221)   
+$baiduLabel.Location = New-Object System.Drawing.Point(30, 221)
 $form.Controls.Add($baiduLabel)
 
 $baiduBox = New-Object System.Windows.Forms.TextBox
 $baiduBox.Font = New-Object System.Drawing.Font('Consolas', 10)
 $baiduBox.Location = New-Object System.Drawing.Point(30, 246)
 $baiduBox.Size = New-Object System.Drawing.Size(440, 26)
-$baiduBox.UseSystemPasswordChar = $true   
+$baiduBox.UseSystemPasswordChar = $true
 $form.Controls.Add($baiduBox)
 
 $okButton = New-Object System.Windows.Forms.Button
 $okButton.Text = 'Start'
-$okButton.Location = New-Object System.Drawing.Point(270, 285)   
+$okButton.Location = New-Object System.Drawing.Point(270, 285)
 $okButton.Size = New-Object System.Drawing.Size(95, 30)
 $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
 $form.Controls.Add($okButton)
 
 $skipButton = New-Object System.Windows.Forms.Button
 $skipButton.Text = 'Start Empty'
-$skipButton.Location = New-Object System.Drawing.Point(375, 285) 
+$skipButton.Location = New-Object System.Drawing.Point(375, 285)
 $skipButton.Size = New-Object System.Drawing.Size(95, 30)
 $skipButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
 $form.Controls.Add($skipButton)
@@ -89,11 +87,10 @@ $form.CancelButton = $skipButton
 
 [void]$form.ShowDialog()
 
-
 $payload = @{
   bailian   = $bailianBox.Text.Trim()
   deepseek  = $deepseekBox.Text.Trim()
-  baidu_map = $baiduBox.Text.Trim()  
+  baidu_map = $baiduBox.Text.Trim()
 } | ConvertTo-Json -Compress
 
 [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))

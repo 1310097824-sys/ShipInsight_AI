@@ -5,7 +5,10 @@ train/
 clean/
 clean1/
 clean2/
+handle_DATA/
+handle_DATA_clean/
 clickhouse-data/
+.workbuddy/
 
 # Codex / IDE / OS local files
 .codex_deps/

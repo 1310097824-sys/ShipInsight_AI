@@ -4,8 +4,8 @@ import com.gsmv.common.ApiResponse;
 import com.gsmv.report.dto.DashboardSummary;
 import com.gsmv.report.dto.EcosystemAnalyticsPoint;
 import com.gsmv.report.dto.NameValuePoint;
-import com.gsmv.report.dto.ObservationMapPoint;
-import com.gsmv.report.dto.SpeciesDistributionPoint;
+import com.gsmv.report.dto.AisRecordMapPoint;
+import com.gsmv.report.dto.VesselDistributionPoint;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -37,65 +37,62 @@ public class ReportController {
         return ApiResponse.success(reportService.dashboardSummary());
     }
 
-    @GetMapping("/protection-level")
+    @GetMapping("/risk-level")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<NameValuePoint>> protectionLevelDistribution() {
-        return ApiResponse.success(reportService.protectionLevelDistribution());
+    public ApiResponse<List<NameValuePoint>> riskDistribution() {
+        return ApiResponse.success(reportService.riskDistribution());
     }
 
-    @GetMapping("/iucn-status")
+    @GetMapping("/operational-status")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<NameValuePoint>> iucnStatusDistribution() {
-        return ApiResponse.success(reportService.iucnStatusDistribution());
+    public ApiResponse<List<NameValuePoint>> operationalStatusDistribution() {
+        return ApiResponse.success(reportService.operationalStatusDistribution());
     }
 
-    @GetMapping("/taxonomy/phylum")
+    @GetMapping("/vessel-type-distribution")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<NameValuePoint>> speciesPhylumDistribution() {
-        return ApiResponse.success(reportService.speciesPhylumDistribution());
-    }
-
-    @GetMapping("/taxonomy/class")
-    @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<NameValuePoint>> speciesClassDistribution() {
+    public ApiResponse<List<NameValuePoint>> vesselTypeDistribution(@RequestParam(defaultValue = "phylum") String level) {
+        if ("phylum".equals(level)) {
+            return ApiResponse.success(reportService.speciesPhylumDistribution());
+        }
         return ApiResponse.success(reportService.speciesClassDistribution());
     }
 
-    @GetMapping("/observation-trend")
+    @GetMapping("/ais-record-trend")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<NameValuePoint>> observationTrend(@RequestParam(defaultValue = "30") int days) {
-        return ApiResponse.success(reportService.observationTrend(days));
+    public ApiResponse<List<NameValuePoint>> aisRecordTrend(@RequestParam(defaultValue = "30") int days) {
+        return ApiResponse.success(reportService.aisRecordTrend(days));
     }
 
-    @GetMapping("/observation-activity")
+    @GetMapping("/ais-record-activity")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<NameValuePoint>> observationActivity(@RequestParam(defaultValue = "30") int days) {
-        return ApiResponse.success(reportService.observationActivityByUser(days));
+    public ApiResponse<List<NameValuePoint>> aisRecordActivity(@RequestParam(defaultValue = "30") int days) {
+        return ApiResponse.success(reportService.aisRecordActivityByUser(days));
     }
 
-    @GetMapping("/ecosystem-analytics")
+    @GetMapping("/shipping-zone-stats")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<EcosystemAnalyticsPoint>> ecosystemAnalytics() {
-        return ApiResponse.success(reportService.ecosystemAnalytics());
+    public ApiResponse<List<EcosystemAnalyticsPoint>> shippingZoneStats() {
+        return ApiResponse.success(reportService.shippingZoneStats());
     }
 
-    @GetMapping("/species-distribution")
+    @GetMapping("/vessel-distribution")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<SpeciesDistributionPoint>> speciesDistribution() {
-        return ApiResponse.success(reportService.speciesDistributionPoints());
+    public ApiResponse<List<VesselDistributionPoint>> vesselDistribution() {
+        return ApiResponse.success(reportService.vesselDistributionPoints());
     }
 
-    @GetMapping("/observation-map")
+    @GetMapping("/ais-record-map")
     @PreAuthorize("hasAuthority('REPORT_READ')")
-    public ApiResponse<List<ObservationMapPoint>> observationMap() {
-        return ApiResponse.success(reportService.observationMapPoints());
+    public ApiResponse<List<AisRecordMapPoint>> aisRecordMap() {
+        return ApiResponse.success(reportService.aisRecordMapPoints());
     }
 
     @GetMapping("/export/excel")
     @PreAuthorize("hasAuthority('REPORT_READ')")
     public ResponseEntity<byte[]> exportExcel(@RequestParam(defaultValue = "30") int days) {
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, buildDisposition("gsmv-report-" + fileDate() + ".xlsx"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, buildDisposition("shipinsight-report-" + fileDate() + ".xlsx"))
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(reportService.exportExcel(days));
     }
@@ -104,7 +101,7 @@ public class ReportController {
     @PreAuthorize("hasAuthority('REPORT_READ')")
     public ResponseEntity<byte[]> exportPdf(@RequestParam(defaultValue = "30") int days) {
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, buildDisposition("gsmv-report-" + fileDate() + ".pdf"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, buildDisposition("shipinsight-report-" + fileDate() + ".pdf"))
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(reportService.exportPdf(days));
     }

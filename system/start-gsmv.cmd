@@ -3,8 +3,6 @@ setlocal EnableExtensions
 
 set "GSMV_ROOT=%~dp0"
 if "%GSMV_ROOT:~-1%"=="\" set "GSMV_ROOT=%GSMV_ROOT:~0,-1%"
-
-
 set "_BAILIAN_BAK=%BAILIAN_API_KEY%"
 set "_DASHSCOPE_BAK=%DASHSCOPE_API_KEY%"
 set "_DEEPSEEK_BAK=%DEEPSEEK_API_KEY%"

@@ -53,7 +53,7 @@
         </el-form>
 
         <div class="auth-card__footer">
-          <span>学生和公众用户可先申请注册</span>
+          <span>船舶运营方与公众观察员可先申请注册</span>
           <RouterLink to="/register">去注册</RouterLink>
         </div>
       </el-card>

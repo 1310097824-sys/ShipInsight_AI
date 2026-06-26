@@ -92,13 +92,13 @@ public class AiReviewTicketController {
         return ApiResponse.success(ticketService.resubmitTicket(id, request));
     }
 
-    @PostMapping("/{id}/link-species")
+    @PostMapping("/{id}/link-vessel")
     @PreAuthorize("hasAuthority('AI_REVIEW_WRITE')")
-    public ApiResponse<AiReviewTicketDtos.ReviewTicketDetailView> linkSpecies(
+    public ApiResponse<AiReviewTicketDtos.ReviewTicketDetailView> linkVessel(
             @PathVariable Long id,
             @RequestBody @Valid AiReviewTicketDtos.LinkSpeciesRequest request
     ) {
-        return ApiResponse.success(ticketService.linkSpecies(id, request));
+        return ApiResponse.success(ticketService.linkVessel(id, request));
     }
 
     @GetMapping("/images/{mediaId}")

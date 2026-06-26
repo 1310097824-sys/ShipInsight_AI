@@ -61,6 +61,14 @@ export function deleteRagDocument(id: number) {
   return unwrap<void>(http.delete(`/v1/ai/rag/documents/${id}`))
 }
 
+export function cleanFailedRagDocuments() {
+  return unwrap<{ cleaned: number }>(http.post('/v1/ai/rag/clean-failed'))
+}
+
+export function deleteBySourceType(sourceType: string) {
+  return unwrap<{ sourceType: string; cleaned: number }>(http.delete(`/v1/ai/rag/documents/source-type/${sourceType}`))
+}
+
 export function rebuildRagIndex() {
   return unwrap<RagIndexJobView>(http.post('/v1/ai/rag/rebuild', undefined, { timeout: RAG_TIMEOUT }))
 }

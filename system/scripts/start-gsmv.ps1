@@ -168,10 +168,11 @@ $backendEnvCommand = @(
   "set `"DASHSCOPE_API_KEY=$bailianKeyForRun`"",
   "set `"DEEPSEEK_API_KEY=$deepSeekKeyForRun`"",
   "set `"BAIDU_MAP_AK=$baiduMapAkForRun`"",
-  "set `"IUCN_API_TOKEN=$iucnTokenForRun`""
+  "set `"IUCN_API_TOKEN=$iucnTokenForRun`"",
+  "set `"SERVER_PORT=8080`""
 ) -join ' && '
 
-$backendCommand = "cd /d `"$rootPath`" && $backendEnvCommand && call mvnw.cmd spring-boot:run 1>> `"$backendOut`" 2>> `"$backendErr`""
+$backendCommand = "cd /d `"$rootPath`" && $backendEnvCommand && call mvnw.cmd spring-boot:run -Dmaven.test.skip=true 1>> `"$backendOut`" 2>> `"$backendErr`""
 $frontendRun = "call npm.cmd run dev -- --host localhost 1>> `"$frontendOut`" 2>> `"$frontendErr`""
 $frontendInstallAndRun = "call npm.cmd install 1>> `"$frontendOut`" 2>> `"$frontendErr`" && $frontendRun"
 $frontendCommand = "cd /d `"$frontendPath`" && if exist node_modules ($frontendRun) else ($frontendInstallAndRun)"

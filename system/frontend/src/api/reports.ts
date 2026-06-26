@@ -1,50 +1,46 @@
 import { http, unwrap } from '@/api/http'
 import type {
+  AisRecordMapPoint,
   DashboardSummary,
-  EcosystemAnalyticsPoint,
   NameValuePoint,
-  ObservationMapPoint,
-  SpeciesDistributionPoint,
+  ShippingZoneStats,
+  VesselDistributionPoint,
 } from '@/types/gsmv'
 
 export function fetchDashboardSummary() {
   return unwrap<DashboardSummary>(http.get('/v1/reports/summary'))
 }
 
-export function fetchProtectionLevelDistribution() {
-  return unwrap<NameValuePoint[]>(http.get('/v1/reports/protection-level'))
+export function fetchRiskLevelDistribution() {
+  return unwrap<NameValuePoint[]>(http.get('/v1/reports/risk-level'))
 }
 
-export function fetchIucnStatusDistribution() {
-  return unwrap<NameValuePoint[]>(http.get('/v1/reports/iucn-status'))
+export function fetchOperationalStatusDistribution() {
+  return unwrap<NameValuePoint[]>(http.get('/v1/reports/operational-status'))
 }
 
-export function fetchSpeciesPhylumDistribution() {
-  return unwrap<NameValuePoint[]>(http.get('/v1/reports/taxonomy/phylum'))
+export function fetchVesselTypeDistribution(level: string) {
+  return unwrap<NameValuePoint[]>(http.get('/v1/reports/vessel-type-distribution', { params: { level } }))
 }
 
-export function fetchSpeciesClassDistribution() {
-  return unwrap<NameValuePoint[]>(http.get('/v1/reports/taxonomy/class'))
+export function fetchAisRecordTrend(days = 30) {
+  return unwrap<NameValuePoint[]>(http.get('/v1/reports/ais-record-trend', { params: { days } }))
 }
 
-export function fetchObservationTrend(days = 30) {
-  return unwrap<NameValuePoint[]>(http.get('/v1/reports/observation-trend', { params: { days } }))
+export function fetchAisRecordActivity(days = 30) {
+  return unwrap<NameValuePoint[]>(http.get('/v1/reports/ais-record-activity', { params: { days } }))
 }
 
-export function fetchObservationActivity(days = 30) {
-  return unwrap<NameValuePoint[]>(http.get('/v1/reports/observation-activity', { params: { days } }))
+export function fetchShippingZoneStats() {
+  return unwrap<ShippingZoneStats[]>(http.get('/v1/reports/shipping-zone-stats'))
 }
 
-export function fetchEcosystemAnalytics() {
-  return unwrap<EcosystemAnalyticsPoint[]>(http.get('/v1/reports/ecosystem-analytics'))
+export function fetchVesselDistributionPoints() {
+  return unwrap<VesselDistributionPoint[]>(http.get('/v1/reports/vessel-distribution'))
 }
 
-export function fetchSpeciesDistributionPoints() {
-  return unwrap<SpeciesDistributionPoint[]>(http.get('/v1/reports/species-distribution'))
-}
-
-export function fetchObservationMapPoints() {
-  return unwrap<ObservationMapPoint[]>(http.get('/v1/reports/observation-map'))
+export function fetchAisRecordMapPoints() {
+  return unwrap<AisRecordMapPoint[]>(http.get('/v1/reports/ais-record-map'))
 }
 
 export async function downloadReportExport(format: 'excel' | 'pdf', days = 30) {
@@ -55,7 +51,7 @@ export async function downloadReportExport(format: 'excel' | 'pdf', days = 30) {
 
   return {
     blob: response.data as Blob,
-    fileName: readFileName(response.headers['content-disposition']) || `gsmv-report.${format === 'excel' ? 'xlsx' : 'pdf'}`,
+    fileName: readFileName(response.headers['content-disposition']) || `shipinsight-report.${format === 'excel' ? 'xlsx' : 'pdf'}`,
   }
 }
 

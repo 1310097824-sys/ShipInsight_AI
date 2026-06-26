@@ -38,7 +38,7 @@ gsmv:
   ai:
     low-confidence-threshold: 0.68
     assistant-observation-limit: 60
-    assistant-species-limit: 20
+    assistant-vessel-limit: 20
     embedding:
       provider: ${AI_EMBEDDING_PROVIDER:ollama}
     bailian:

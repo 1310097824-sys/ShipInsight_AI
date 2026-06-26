@@ -33,6 +33,65 @@
         </div>
       </section>
 
+      <el-card class="panel-card ais-link-card" shadow="never">
+        <template #header>
+          <div class="panel-header">
+            <strong>AIS 动态</strong>
+            <el-button type="primary" plain :disabled="!aisQueryKeyword" @click="openAllAisRecords">
+              查看全部 AIS 记录
+            </el-button>
+          </div>
+        </template>
+
+        <el-alert
+          v-if="aisError"
+          title="AIS 动态暂时不可用"
+          :description="aisError"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
+        <div v-else v-loading="aisLoading" class="ais-link-body">
+          <section class="ais-summary-grid">
+            <div class="ais-summary-item">
+              <span>关联记录</span>
+              <strong>{{ aisSummary?.totalRecords ?? 0 }}</strong>
+            </div>
+            <div class="ais-summary-item">
+              <span>首次接收</span>
+              <strong>{{ formatDateTime(aisSummary?.firstBaseDateTime) }}</strong>
+            </div>
+            <div class="ais-summary-item">
+              <span>最近接收</span>
+              <strong>{{ formatDateTime(aisSummary?.latestBaseDateTime) }}</strong>
+            </div>
+            <div class="ais-summary-item">
+              <span>最近位置</span>
+              <strong>{{ latestPositionLabel }}</strong>
+            </div>
+          </section>
+
+          <el-table :data="aisRecords" stripe empty-text="暂无关联 AIS 记录">
+            <el-table-column label="接收时间" min-width="170">
+              <template #default="{ row }">
+                {{ formatDateTime(row.baseDateTime) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="位置" min-width="190">
+              <template #default="{ row }">
+                {{ coordinateLabel(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="航行参数" min-width="230" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ navigationSummary(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="sourceFile" label="来源文件" min-width="180" show-overflow-tooltip />
+          </el-table>
+        </div>
+      </el-card>
+
       <el-card class="panel-card" shadow="never">
         <template #header>
           <strong>基础档案</strong>
@@ -137,11 +196,11 @@ import { Back } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchVesselDetail, fetchVesselVersions, rollbackVesselVersion } from '@/api/vessels'
+import { fetchVesselAisRecords, fetchVesselAisSummary, fetchVesselDetail, fetchVesselVersions, rollbackVesselVersion } from '@/api/vessels'
 import VersionHistoryPanel from '@/components/VersionHistoryPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { listenDataChanged, notifyDataChanged } from '@/utils/dataSync'
-import type { EntityVersionView, VesselDetailView } from '@/types/gsmv'
+import type { AisRecordView, AisVesselSummaryView, EntityVersionView, VesselDetailView } from '@/types/gsmv'
 
 const route = useRoute()
 const router = useRouter()
@@ -150,12 +209,21 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const detail = ref<VesselDetailView | null>(null)
 const versions = ref<EntityVersionView[]>([])
+const aisSummary = ref<AisVesselSummaryView | null>(null)
+const aisRecords = ref<AisRecordView[]>([])
 const versionsLoading = ref(false)
+const aisLoading = ref(false)
+const aisError = ref('')
 const rollbackingVersionId = ref<number | null>(null)
 let stopDataSync: (() => void) | undefined
 let refreshTimer: number | undefined
 
 const vesselId = computed(() => Number(route.params.id))
+const aisQueryKeyword = computed(() => detail.value?.mmsi || detail.value?.imo || '')
+const latestPositionLabel = computed(() => {
+  const latest = aisSummary.value?.latestRecord
+  return latest ? coordinateLabel(latest) : '-'
+})
 const imageUrls = computed(() => detail.value?.images.map((item) => item.url) || [])
 const sourceItems = computed(() =>
   (detail.value?.sourceText || '')
@@ -202,12 +270,42 @@ async function loadVersions() {
   }
 }
 
+async function loadAisData() {
+  if (!vesselId.value || Number.isNaN(vesselId.value)) {
+    return
+  }
+
+  aisLoading.value = true
+  aisError.value = ''
+  try {
+    const [summary, pageData] = await Promise.all([
+      fetchVesselAisSummary(vesselId.value),
+      fetchVesselAisRecords(vesselId.value, { page: 1, size: 5 }),
+    ])
+    aisSummary.value = summary
+    aisRecords.value = pageData.items
+  } catch (error) {
+    aisSummary.value = null
+    aisRecords.value = []
+    aisError.value = error instanceof Error ? error.message : 'AIS 动态加载失败'
+  } finally {
+    aisLoading.value = false
+  }
+}
+
 async function refreshPage() {
-  await Promise.all([loadDetail(), loadVersions()])
+  await Promise.all([loadDetail(), loadVersions(), loadAisData()])
 }
 
 function goBack() {
   router.push('/vessels')
+}
+
+function openAllAisRecords() {
+  if (!aisQueryKeyword.value) {
+    return
+  }
+  router.push({ path: '/observations', query: { keyword: aisQueryKeyword.value } })
 }
 
 async function handleRollback(version: EntityVersionView) {
@@ -252,6 +350,40 @@ function formatDimensions(item: Pick<VesselDetailView, 'lengthM' | 'widthM' | 'd
 function formatTonnage(item: Pick<VesselDetailView, 'grossTonnage' | 'deadweightTonnage'>) {
   const parts = [item.grossTonnage && `总吨 ${item.grossTonnage}`, item.deadweightTonnage && `载重吨 ${item.deadweightTonnage}`]
   return parts.filter(Boolean).join(' / ') || '-'
+}
+
+function formatDateTime(value?: string) {
+  return value ? value.replace('T', ' ') : '-'
+}
+
+function coordinateLabel(row: Pick<AisRecordView, 'latitude' | 'longitude'>) {
+  return `${formatCoordinate(row.latitude)}, ${formatCoordinate(row.longitude)}`
+}
+
+function navigationSummary(row: Pick<AisRecordView, 'sog' | 'cog' | 'heading' | 'draft' | 'status'>) {
+  return [
+    `航速 ${formatMetric(row.sog, 'kn')}`,
+    `航向 ${formatMetric(row.cog, '°')}`,
+    `船首 ${formatMetric(row.heading, '°')}`,
+    `吃水 ${formatMetric(row.draft, 'm')}`,
+    row.status == null ? '' : `状态 ${row.status}`,
+  ]
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function formatCoordinate(value?: number | null) {
+  if (value == null) {
+    return '-'
+  }
+  return Number(value).toFixed(5)
+}
+
+function formatMetric(value: number | string | null | undefined, unit: string) {
+  if (value == null || value === '') {
+    return '-'
+  }
+  return `${value}${unit}`
 }
 
 function riskTagType(value?: string) {
@@ -323,10 +455,54 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .detail-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.ais-link-body {
+  display: grid;
+  gap: 16px;
+}
+
+.ais-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ais-summary-item {
+  min-height: 82px;
+  padding: 14px 16px;
+  border: 1px solid rgba(157, 233, 255, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.08), rgba(124, 60, 255, 0.06)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.ais-summary-item span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--gsmv-muted);
+  font-size: 13px;
+}
+
+.ais-summary-item strong {
+  display: block;
+  color: #f2fdff;
+  font-size: 18px;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .summary-tile {
@@ -402,14 +578,16 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1080px) {
   .detail-summary,
-  .detail-grid {
+  .detail-grid,
+  .ais-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
   .detail-summary,
-  .detail-grid {
+  .detail-grid,
+  .ais-summary-grid {
     grid-template-columns: 1fr;
   }
 }

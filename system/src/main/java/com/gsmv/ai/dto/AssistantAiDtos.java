@@ -1,5 +1,6 @@
 package com.gsmv.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.time.LocalDateTime;
@@ -22,13 +23,14 @@ public final class AssistantAiDtos {
     ) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record StructuredQuery(
             String intent,
             String locationKeyword,
-            String ecosystemKeyword,
-            String speciesKeyword,
-            String protectionLevel,
-            String iucnStatus,
+            String areaKeyword,
+            String vesselKeyword,
+            String riskLevel,
+            String navigationStatus,
             Integer yearsBack,
             Integer recentDays,
             boolean includeTrend,

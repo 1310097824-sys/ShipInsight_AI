@@ -4,9 +4,9 @@
       <article class="dashboard-window dashboard-map-window">
         <header class="dashboard-window__header">
           <div>
-            <span class="dashboard-window__eyebrow">LA/LB Port Command · Live Maritime Map</span>
-            <strong>洛杉矶港 / 长滩港海上交通态势大屏</strong>
-            <p>San Pedro Bay 进出港航线、外锚地排队、码头作业压力与异常风险热区。</p>
+            <span class="dashboard-window__eyebrow">AIS Situation Screen · Live Maritime Map</span>
+            <strong>湛江近海 / 北部湾船舶交通态势大屏</strong>
+            <p>围绕 AIS 最新快照、重点航路、低速目标和风险备注，快速查看当天航线态势与重点船舶动态。</p>
           </div>
           <div class="dashboard-map-modes" role="group" aria-label="地图图层">
             <button
@@ -21,18 +21,44 @@
           </div>
         </header>
 
+        <div class="dashboard-map-toolbar">
+          <el-select v-model="selectedDatasetDate" placeholder="选择 AIS 数据日期" clearable class="dashboard-map-toolbar__date">
+            <el-option v-for="item in datasetDates" :key="item" :label="item" :value="item" />
+          </el-select>
+          <el-button plain :disabled="!hasPreviousDate" @click="selectAdjacentDate(-1)">上一日</el-button>
+          <el-button plain :disabled="!hasNextDate" @click="selectAdjacentDate(1)">下一日</el-button>
+          <el-button
+            type="primary"
+            :loading="loading"
+            :class="{ 'is-playing': playingTimeline }"
+            @click="toggleTimelinePlayback"
+          >
+            {{ playingTimeline ? '暂停轮播' : '按天轮播' }}
+          </el-button>
+          <el-button plain :disabled="!selectedDatasetDate" @click="resetSelectedDate">回到最新</el-button>
+          <el-button plain :loading="loading" @click="loadOverview">刷新态势</el-button>
+          <el-select v-model="playbackSpeed" class="dashboard-map-toolbar__speed" :disabled="playingTimeline">
+            <el-option v-for="item in playbackSpeedOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <div class="spacer" />
+          <div class="dashboard-map-toolbar__snapshot">
+            <span>当前快照：{{ activeDatasetLabel }}</span>
+            <small :class="compareSummaryClass">{{ compareSummary }}</small>
+          </div>
+        </div>
+
         <div class="dashboard-map-stage">
           <div ref="mapRef" class="dashboard-map" />
           <div class="dashboard-map-stage__scan" />
           <div class="dashboard-map-stage__compass">
             <span>N</span>
-            <strong>11 nm</strong>
+            <strong>北部湾</strong>
           </div>
           <div class="dashboard-map-legend">
-            <span><i class="legend-dot legend-dot--route" />主航线</span>
-            <span><i class="legend-dot legend-dot--heat" />热力区</span>
-            <span><i class="legend-dot legend-dot--risk" />风险水域</span>
-            <span><i class="legend-dot legend-dot--ship" />AIS 目标</span>
+            <span><i class="legend-dot legend-dot--route" />主航路</span>
+            <span><i class="legend-dot legend-dot--heat" />低速聚集</span>
+            <span><i class="legend-dot legend-dot--risk" />风险备注</span>
+            <span><i class="legend-dot legend-dot--ship" />AIS 船位</span>
           </div>
         </div>
       </article>
@@ -45,7 +71,7 @@
           </header>
           <div class="dashboard-score-panel__body">
             <strong>{{ situationScore }}</strong>
-            <p>港外等待仍处高位，主进港航道保持可控通行。</p>
+            <p>{{ scoreDescription }}</p>
             <div class="dashboard-hero__pulse">
               <span />
               <span />
@@ -72,10 +98,10 @@
                 <strong>AI 出海建议</strong>
                 <p>{{ weatherResult.aiInterpretation || '暂无解读数据' }}</p>
               </div>
-              <div v-if="weatherResult.weatherData" class="dashboard-weather-panel__raw">
-                <strong>实时天气数据</strong>
-                <pre>{{ weatherResult.weatherData }}</pre>
-              </div>
+            <div v-if="formattedWeatherData" class="dashboard-weather-panel__raw">
+              <strong>实时天气数据</strong>
+              <pre>{{ formattedWeatherData }}</pre>
+            </div>
             </div>
             <p class="dashboard-weather-panel__hint">
               💡 如果想要获取别的地方的天气，可以试试在<router-link to="/quiz/ai">知识问答模块</router-link>中询问 AI 助手哦！
@@ -85,28 +111,43 @@
 
         <section class="dashboard-window dashboard-window__column">
           <header class="dashboard-window__header dashboard-window__header--compact">
-            <span class="dashboard-window__eyebrow">Port Focus</span>
-            <strong>重点港区</strong>
+            <span class="dashboard-window__eyebrow">Focus Vessel</span>
+            <strong>当前焦点船舶</strong>
           </header>
-          <div class="dashboard-focus-list">
-            <article v-for="port in portSignals" :key="port.id" class="dashboard-focus-item">
+          <div v-if="focusRecord" class="dashboard-focus-vessel">
+            <div class="dashboard-focus-vessel__header">
               <div>
-                <span>{{ port.kind }}</span>
-                <strong>{{ port.name }}</strong>
-                <p>{{ port.status }}</p>
+                <span>MMSI {{ focusRecord.mmsi }}</span>
+                <strong>{{ vesselName(focusRecord) }}</strong>
               </div>
-              <div class="dashboard-focus-item__score">
-                <b>{{ port.berthUsage }}%</b>
-                <small>泊位使用</small>
+              <el-tag effect="plain">{{ focusRecord.imo || focusRecord.callSign || '未登记' }}</el-tag>
+            </div>
+            <div class="dashboard-focus-vessel__meta">
+              <div>
+                <small>接收时间</small>
+                <strong>{{ displayTime(focusRecord.baseDateTime) }}</strong>
               </div>
-            </article>
+              <div>
+                <small>坐标</small>
+                <strong>{{ positionLabel(focusRecord) }}</strong>
+              </div>
+              <div>
+                <small>航速</small>
+                <strong>{{ metricLabel(focusRecord.sog, 'kn') }}</strong>
+              </div>
+              <div>
+                <small>航向</small>
+                <strong>{{ metricLabel(focusRecord.cog, '°') }}</strong>
+              </div>
+            </div>
           </div>
+          <el-empty v-else description="当前没有可展示的 AIS 焦点船舶" />
         </section>
 
         <section class="dashboard-window dashboard-window__column">
           <header class="dashboard-window__header dashboard-window__header--compact">
             <span class="dashboard-window__eyebrow">Watch List</span>
-            <strong>局势预警</strong>
+            <strong>态势预警</strong>
           </header>
           <div class="dashboard-alert-list">
             <article v-for="alert in alerts" :key="alert.title" class="dashboard-alert" :class="`is-${alert.level}`">
@@ -120,7 +161,13 @@
     </section>
 
     <section class="dashboard-kpi-grid" aria-label="态势指标">
-      <article v-for="item in kpiCards" :key="item.label" class="dashboard-window__metric">
+      <article
+        v-for="item in kpiCards"
+        :key="item.label"
+        class="dashboard-window__metric"
+        :class="{ 'is-interactive': !!item.mapMode, 'is-active': item.mapMode ? selectedMapMode === item.mapMode : false }"
+        @click="handleKpiCardClick(item)"
+      >
         <div class="dashboard-window__metric-icon">
           <el-icon><component :is="item.icon" /></el-icon>
         </div>
@@ -137,18 +184,18 @@
       <article class="dashboard-window dashboard-window__column">
         <header class="dashboard-window__header">
           <div>
-            <span class="dashboard-window__eyebrow">Route Load</span>
-            <strong>航线载荷与流向</strong>
+            <span class="dashboard-window__eyebrow">Route Focus</span>
+            <strong>重点水域与主航路</strong>
           </div>
         </header>
         <div class="dashboard-route-list">
-          <article v-for="route in routeSignals" :key="route.id" class="dashboard-route-card">
-            <div class="dashboard-route-card__line" :style="{ background: route.color }" />
+          <article v-for="zone in zoneInsights" :key="zone.id" class="dashboard-route-card">
+            <div class="dashboard-route-card__line" :style="{ background: zone.color }" />
             <div>
-              <strong>{{ route.name }}</strong>
-              <p>{{ route.description }}</p>
+              <strong>{{ zone.name }}</strong>
+              <p>{{ zone.detail }}</p>
             </div>
-            <span>{{ route.volume }}</span>
+            <span>{{ zone.count }} 点 / {{ zone.avgSpeed }}</span>
           </article>
         </div>
       </article>
@@ -157,7 +204,7 @@
         <header class="dashboard-window__header">
           <div>
             <span class="dashboard-window__eyebrow">AIS Trend</span>
-            <strong>近 30 天 AIS 活跃趋势</strong>
+            <strong>近 30 个数据日 AIS 活跃趋势</strong>
           </div>
         </header>
         <ChartPanel class="dashboard-compact-chart" :option="trendOption" />
@@ -166,11 +213,11 @@
       <article class="dashboard-window dashboard-chart-window">
         <header class="dashboard-window__header">
           <div>
-            <span class="dashboard-window__eyebrow">Operator Load</span>
-            <strong>航线/锚地负载统计</strong>
+            <span class="dashboard-window__eyebrow">Importer Load</span>
+            <strong>AIS 录入活跃度</strong>
           </div>
         </header>
-        <ChartPanel class="dashboard-compact-chart" :option="routeLoadOption" />
+        <ChartPanel class="dashboard-compact-chart" :option="importerOption" />
       </article>
     </section>
   </div>
@@ -178,31 +225,44 @@
 
 <script setup lang="ts">
 import L from 'leaflet'
+import 'leaflet.markercluster'
 import { Aim, DataAnalysis, LocationFilled, Monitor, Ship, WarningFilled } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { EChartsOption } from 'echarts'
-import { fetchDashboardSummary, fetchObservationActivity, fetchObservationTrend } from '@/api/reports'
+import {
+  fetchAisDatasetDates,
+  fetchAisDatasetDateStats,
+  fetchAisImporterStats,
+  fetchAisMapRecords,
+  fetchAisRiskSummary,
+} from '@/api/aisRecords'
+import { fetchAllShippingZones } from '@/api/ecosystems'
 import { fetchWeatherInterpret } from '@/api/quiz'
 import ChartPanel from '@/components/ChartPanel.vue'
-import { listenDataChanged } from '@/utils/dataSync'
 import { addPreferredTileLayer, toMapDisplayPoint } from '@/utils/mapProvider'
 import { buildMapPopupCard, createMapMarkerIcon } from '@/utils/mapMarkerTheme'
-import type { DashboardSummary, NameValuePoint } from '@/types/gsmv'
+import type {
+  AisDatasetDateStat,
+  AisRankingStat,
+  AisRecordView,
+  AisRiskSummary,
+  ShippingZone,
+} from '@/types/gsmv'
 
-type MapMode = 'all' | 'traffic' | 'risk' | 'anchor'
+type MapMode = 'all' | 'traffic' | 'slow' | 'risk'
 type MarkerTone = 'aqua' | 'emerald' | 'violet'
 
-interface PortSignal {
+interface FocusZone {
   id: string
   name: string
   kind: string
   lat: number
   lng: number
-  status: string
-  berthUsage: number
-  queue: string
+  radiusMeters: number
+  color: string
   tone: MarkerTone
+  detail: string
 }
 
 interface RouteSignal {
@@ -211,259 +271,163 @@ interface RouteSignal {
   description: string
   path: Array<[number, number]>
   color: string
-  volume: string
-  risk: string
 }
 
-interface HeatCell {
+interface ZoneInsight {
   id: string
   name: string
-  lat: number
-  lng: number
-  radius: number
-  intensity: number
-  type: 'traffic' | 'anchor'
+  detail: string
+  count: number
+  avgSpeed: string
+  slowCount: number
+  color: string
+}
+
+interface DashboardAlert {
+  level: 'critical' | 'warning' | 'stable'
+  levelLabel: string
+  title: string
   detail: string
 }
 
-interface RiskZone {
-  id: string
-  name: string
-  lat: number
-  lng: number
-  radius: number
-  level: 'high' | 'medium' | 'watch'
+interface KpiCard {
+  label: string
+  value: string
   detail: string
+  trend: string
+  icon: typeof Ship
+  mapMode?: MapMode | null
 }
 
-interface VesselTarget {
-  id: string
-  name: string
-  lat: number
-  lng: number
-  status: string
-  speed: string
-  tone: MarkerTone
-}
-
-const summary = ref<DashboardSummary>({
-  totalSpecies: 0,
-  totalObservations: 0,
-  totalEcosystems: 0,
-  totalUsers: 0,
-  recentObservationCount: 0,
-})
-const trendData = ref<NameValuePoint[]>([])
-const observerActivity = ref<NameValuePoint[]>([])
-const selectedMapMode = ref<MapMode>('all')
-const mapRef = ref<HTMLDivElement>()
-
-const losAngelesPort: [number, number] = [33.7315, -118.262]
-const longBeachPort: [number, number] = [33.7542, -118.2165]
+const MAP_LIMIT = 5000
+const defaultCenter: [number, number] = [21.18, 110.53]
 
 const mapModes: Array<{ label: string; value: MapMode }> = [
   { label: '综合态势', value: 'all' },
-  { label: '航线流量', value: 'traffic' },
-  { label: '风险热区', value: 'risk' },
-  { label: '锚地等待', value: 'anchor' },
+  { label: '主航路流量', value: 'traffic' },
+  { label: '低速目标', value: 'slow' },
+  { label: '风险备注', value: 'risk' },
 ]
 
-const portSignals: PortSignal[] = [
+const focusZones: FocusZone[] = [
   {
-    id: 'port-la',
-    name: '洛杉矶港',
-    kind: 'PORT OF LA',
-    lat: losAngelesPort[0],
-    lng: losAngelesPort[1],
-    status: '集装箱泊位保持高负荷，进港窗口集中在傍晚。',
-    berthUsage: 87,
-    queue: '18 艘',
+    id: 'zhanjiang-port',
+    name: '湛江港进出航道',
+    kind: 'PORT GATE',
+    lat: 21.1829,
+    lng: 110.5344,
+    radiusMeters: 18000,
+    color: '#00e5ff',
     tone: 'aqua',
+    detail: '港口入口、近岸锚地与拖带活动的主要交汇带。',
   },
   {
-    id: 'port-lb',
-    name: '长滩港',
-    kind: 'PORT OF LONG BEACH',
-    lat: longBeachPort[0],
-    lng: longBeachPort[1],
-    status: '码头周转改善，但东侧锚地仍有排队压力。',
-    berthUsage: 82,
-    queue: '14 艘',
+    id: 'qiongzhou-strait',
+    name: '琼州海峡通道',
+    kind: 'STRAIT',
+    lat: 20.265,
+    lng: 110.42,
+    radiusMeters: 32000,
+    color: '#20ff9f',
     tone: 'emerald',
+    detail: '连接北部湾与南海东侧水域的密集过境通道。',
   },
   {
-    id: 'anchorage',
-    name: 'San Pedro 外锚地',
-    kind: 'ANCHORAGE',
-    lat: 33.65,
-    lng: -118.29,
-    status: '外锚地目标密度升高，需关注低速漂移与交叉航迹。',
-    berthUsage: 76,
-    queue: '27 艘',
+    id: 'beibu-gulf',
+    name: '北部湾近岸带',
+    kind: 'COASTAL',
+    lat: 21.58,
+    lng: 109.92,
+    radiusMeters: 36000,
+    color: '#ffb84d',
     tone: 'violet',
+    detail: '近岸补给、沿海支线与区域渔运混行的重点海域。',
   },
 ]
 
 const routeSignals: RouteSignal[] = [
   {
-    id: 'pacific-main',
-    name: '北太平洋主干线',
-    description: '亚洲方向远洋船队进入 San Pedro Bay 的主通道。',
+    id: 'route-zhanjiang-port',
+    name: '湛江港进出港线',
+    description: '连接港区、近岸锚地与外海主通道的核心进出港航路。',
     path: [
-      [33.98, -119.36],
-      [33.89, -118.84],
-      [33.79, -118.48],
-      [33.73, -118.27],
+      [21.33, 110.72],
+      [21.26, 110.63],
+      [21.22, 110.58],
+      [21.1829, 110.5344],
     ],
     color: '#00e5ff',
-    volume: '42 艘次/日',
-    risk: '中',
   },
   {
-    id: 'coastal-north',
-    name: '加州北向沿岸线',
-    description: '连接湾区、奥克兰与南加州港群的沿岸航路。',
+    id: 'route-qiongzhou',
+    name: '琼州海峡主通道',
+    description: '横向穿越海峡的主要过境航路，适合观察速度分化与通行密度。',
     path: [
-      [34.18, -118.78],
-      [34.02, -118.58],
-      [33.84, -118.38],
-      [33.75, -118.22],
+      [20.31, 110.72],
+      [20.27, 110.55],
+      [20.23, 110.35],
+      [20.21, 110.12],
     ],
     color: '#20ff9f',
-    volume: '26 艘次/日',
-    risk: '低',
   },
   {
-    id: 'mexico-south',
-    name: '墨西哥南向支线',
-    description: '南向连接 Ensenada 与 Baja 近海的支线通道。',
+    id: 'route-beibu',
+    name: '北部湾沿海航路',
+    description: '沿近岸连接北部湾多个港口和作业海域的支线航路。',
     path: [
-      [33.28, -118.66],
-      [33.43, -118.48],
-      [33.61, -118.32],
-      [33.73, -118.23],
+      [21.82, 109.75],
+      [21.64, 109.9],
+      [21.42, 110.16],
+      [21.22, 110.44],
     ],
     color: '#ffb84d',
-    volume: '19 艘次/日',
-    risk: '中',
-  },
-  {
-    id: 'terminal-shuttle',
-    name: '港内接驳环线',
-    description: 'Terminal Island、内港与外港之间的拖轮/支线活动。',
-    path: [
-      [33.72, -118.29],
-      [33.75, -118.25],
-      [33.77, -118.21],
-      [33.73, -118.18],
-      [33.71, -118.24],
-    ],
-    color: '#ff4fd8',
-    volume: '64 艘次/日',
-    risk: '高',
   },
 ]
 
-const heatCells: HeatCell[] = [
-  {
-    id: 'heat-gate',
-    name: '防波堤入口热区',
-    lat: 33.715,
-    lng: -118.245,
-    radius: 5200,
-    intensity: 0.92,
-    type: 'traffic',
-    detail: '进出港交汇与低速等待叠加，短时密度最高。',
-  },
-  {
-    id: 'heat-anchor-east',
-    name: '东侧锚地热区',
-    lat: 33.64,
-    lng: -118.18,
-    radius: 7600,
-    intensity: 0.74,
-    type: 'anchor',
-    detail: '长滩方向待泊船舶集中，队列稳定但占用水域较大。',
-  },
-  {
-    id: 'heat-anchor-west',
-    name: '西南外海等待带',
-    lat: 33.58,
-    lng: -118.38,
-    radius: 8500,
-    intensity: 0.66,
-    type: 'anchor',
-    detail: '远洋干线船舶减速进入排序，建议持续跟踪 ETA 波动。',
-  },
-]
+const mapRef = ref<HTMLDivElement>()
+const loading = ref(false)
+const selectedMapMode = ref<MapMode>('all')
+const selectedDatasetDate = ref('')
+const playingTimeline = ref(false)
+const playbackSpeed = ref(3500)
+const datasetDates = ref<string[]>([])
+const records = ref<AisRecordView[]>([])
+const selectedRecordId = ref('')
+const riskSummary = ref<AisRiskSummary>({
+  total: 0,
+  lowSpeedCount: 0,
+  stoppedCount: 0,
+  abnormalNoteCount: 0,
+  uniqueVesselCount: 0,
+})
+const datasetDateStats = ref<AisDatasetDateStat[]>([])
+const importerStats = ref<AisRankingStat[]>([])
+const shippingZones = ref<ShippingZone[]>([])
 
-const riskZones: RiskZone[] = [
-  {
-    id: 'risk-crossing',
-    name: '交叉航迹预警区',
-    lat: 33.705,
-    lng: -118.235,
-    radius: 3600,
-    level: 'high',
-    detail: '进港航道与拖轮接驳流交叉，夜间复核优先级高。',
-  },
-  {
-    id: 'risk-breakwater',
-    name: '防波堤限速带',
-    lat: 33.712,
-    lng: -118.172,
-    radius: 2900,
-    level: 'medium',
-    detail: '靠近港口入口的低速航段，需关注异常停滞。',
-  },
-  {
-    id: 'risk-weather',
-    name: '外海能见度观察区',
-    lat: 33.52,
-    lng: -118.52,
-    radius: 5600,
-    level: 'watch',
-    detail: '外海侧可能出现航速分化，保持观察即可。',
-  },
-]
+let map: L.Map | null = null
+let markerLayer: L.MarkerClusterGroup | null = null
+let overlayLayer: L.LayerGroup | null = null
+let resizeObserver: ResizeObserver | null = null
+let playbackTimer: ReturnType<typeof window.setInterval> | null = null
 
-const vesselTargets: VesselTarget[] = [
-  { id: 'v-01', name: 'APL HORIZON', lat: 33.71, lng: -118.31, status: '进港排序', speed: '8.4 kn', tone: 'aqua' },
-  { id: 'v-02', name: 'EVER SIGNAL', lat: 33.64, lng: -118.22, status: '锚地等待', speed: '0.8 kn', tone: 'violet' },
-  { id: 'v-03', name: 'MAERSK PACIFIC', lat: 33.82, lng: -118.48, status: '主线进港', speed: '13.2 kn', tone: 'emerald' },
-  { id: 'v-04', name: 'COSCO BRIDGE', lat: 33.75, lng: -118.19, status: '靠泊接近', speed: '5.1 kn', tone: 'aqua' },
-  { id: 'v-05', name: 'PACIFIC TUG 07', lat: 33.735, lng: -118.245, status: '港内接驳', speed: '6.7 kn', tone: 'emerald' },
-  { id: 'v-06', name: 'SEA ARROW', lat: 33.575, lng: -118.405, status: '外海减速', speed: '3.2 kn', tone: 'violet' },
-]
-
-const alerts = [
-  {
-    level: 'critical',
-    levelLabel: '高',
-    title: '防波堤入口交叉航迹升高',
-    detail: '过去 2 小时内低速目标与拖轮接驳轨迹重叠，需要保持复核。',
-  },
-  {
-    level: 'warning',
-    levelLabel: '中',
-    title: '东侧锚地排队压力延续',
-    detail: '长滩方向待泊目标占用水域较大，预计晚间有一轮集中进港。',
-  },
-  {
-    level: 'stable',
-    levelLabel: '稳',
-    title: '北太平洋主干线通行可控',
-    detail: '远洋船队速度分布正常，未见大范围绕航信号。',
-  },
-]
-
+// ==================== 天气模块 ====================
 const weatherCity = ref('湛江')
 const weatherTime = ref('')
 const weatherLoading = ref(true)
 const weatherError = ref<string | null>(null)
 const weatherResult = ref<Record<string, unknown> | null>(null)
 let weatherTimer: ReturnType<typeof setInterval> | null = null
-let timeTimer: ReturnType<typeof setInterval> | null = null
+
+const formattedWeatherData = computed(() => {
+  const raw = weatherResult.value?.weatherData
+  if (!raw || typeof raw !== 'string') return ''
+  try {
+    const parsed = JSON.parse(raw)
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return raw
+  }
+})
 
 function updateWeatherTime() {
   const now = new Date()
@@ -481,143 +445,220 @@ async function loadWeather() {
   weatherError.value = null
   try {
     const data = await fetchWeatherInterpret(weatherCity.value)
-    if (data.akConfigured === false) {
+    if (!data.akConfigured) {
       weatherError.value = String(data.error || '百度地图 AK 未配置')
     } else if (data.error) {
       weatherError.value = String(data.error)
     }
-    weatherResult.value = data as Record<string, unknown>
-  } catch (e: unknown) {
+    weatherResult.value = data as unknown as Record<string, unknown>
+  } catch (e) {
     weatherError.value = e instanceof Error ? e.message : '天气数据加载失败'
   } finally {
     weatherLoading.value = false
   }
 }
 
-const fallbackTrend: NameValuePoint[] = [
-  { name: '05-19', value: 28 },
-  { name: '05-23', value: 34 },
-  { name: '05-27', value: 39 },
-  { name: '05-31', value: 36 },
-  { name: '06-04', value: 48 },
-  { name: '06-08', value: 43 },
-  { name: '06-12', value: 52 },
-  { name: '06-15', value: 47 },
+const markerMap = new Map<string, L.Marker>()
+const playbackSpeedOptions = [
+  { label: '轮播 2 秒/日', value: 2000 },
+  { label: '轮播 3.5 秒/日', value: 3500 },
+  { label: '轮播 5 秒/日', value: 5000 },
 ]
 
-let map: L.Map | null = null
-let overlayLayer: L.LayerGroup | null = null
-let resizeObserver: ResizeObserver | null = null
-let stopDataSync: (() => void) | undefined
-
-const situationScore = computed(() => {
-  const base = 78
-  const activityBoost = Math.min(summary.value.recentObservationCount || 5, 18)
-  return Math.min(96, base + activityBoost)
+const activeDatasetLabel = computed(() => selectedDatasetDate.value || datasetDates.value[0] || '最新数据集')
+const activeDatasetIndex = computed(() => {
+  const current = selectedDatasetDate.value || datasetDates.value[0] || ''
+  return datasetDates.value.findIndex((item) => item === current)
+})
+const hasPreviousDate = computed(() => activeDatasetIndex.value >= 0 && activeDatasetIndex.value < datasetDates.value.length - 1)
+const hasNextDate = computed(() => activeDatasetIndex.value > 0)
+const activeRecordCount = computed(() => datasetDateStats.value.find((item) => item.datasetDate === activeDatasetLabel.value)?.recordCount || 0)
+const previousDatasetStat = computed(() => {
+  const currentIndex = datasetDateStats.value.findIndex((item) => item.datasetDate === activeDatasetLabel.value)
+  if (currentIndex < 0 || currentIndex >= datasetDateStats.value.length - 1) {
+    return null
+  }
+  return datasetDateStats.value[currentIndex + 1]
+})
+const compareSummary = computed(() => {
+  const previous = previousDatasetStat.value
+  if (!previous) {
+    return activeRecordCount.value ? `当前共 ${activeRecordCount.value} 条 AIS 记录` : '当前暂无上一日对比'
+  }
+  const diff = activeRecordCount.value - previous.recordCount
+  const sign = diff > 0 ? '+' : ''
+  return `${previous.datasetDate} 对比 ${sign}${diff} 条`
+})
+const compareSummaryClass = computed(() => {
+  const previous = previousDatasetStat.value
+  if (!previous) {
+    return 'is-neutral'
+  }
+  const diff = activeRecordCount.value - previous.recordCount
+  if (diff > 0) return 'is-up'
+  if (diff < 0) return 'is-down'
+  return 'is-neutral'
+})
+const latestRecord = computed(() => records.value[0] || null)
+const focusRecord = computed(() => records.value.find((item) => item.id === selectedRecordId.value) || latestRecord.value)
+const filteredRecords = computed(() => {
+  switch (selectedMapMode.value) {
+    case 'slow':
+      return records.value.filter((item) => isSlowRecord(item))
+    case 'risk':
+      return records.value.filter((item) => hasRiskNote(item) || isSlowRecord(item))
+    case 'traffic':
+      return records.value.filter((item) => isActiveRecord(item))
+    default:
+      return records.value
+  }
 })
 
-const kpiCards = computed(() => [
+const situationScore = computed(() => {
+  const vesselBase = Math.min(20, Math.round(riskSummary.value.uniqueVesselCount / 6))
+  const penalty = Math.min(18, riskSummary.value.abnormalNoteCount * 2 + Math.round(riskSummary.value.stoppedCount / 2))
+  return Math.max(42, Math.min(96, 74 + vesselBase - penalty))
+})
+
+const scoreDescription = computed(() => {
+  if (riskSummary.value.abnormalNoteCount > 0) {
+    return `当前存在 ${riskSummary.value.abnormalNoteCount} 条带风险备注的 AIS 记录，建议优先复核。`
+  }
+  if (riskSummary.value.stoppedCount > 0) {
+    return `当前有 ${riskSummary.value.stoppedCount} 条疑似停泊/停滞记录，需结合航线位置判断是否异常。`
+  }
+  return '当前快照以正常通行和低风险流动为主，未见明显异常备注聚集。'
+})
+
+const kpiCards = computed<KpiCard[]>(() => [
   {
-    label: 'AIS 活跃目标',
-    value: `${Math.max(summary.value.recentObservationCount * 9, 148)}`,
-    detail: 'San Pedro Bay 近岸与外锚地估算活跃目标',
-    trend: '+8%',
+    label: '快照船舶',
+    value: `${filteredRecords.value.length}`,
+    detail: `${activeDatasetLabel.value} 当前地图层里可见的 AIS 最新点位`,
+    trend: selectedMapMode.value === 'all' ? 'Live' : mapModes.find((item) => item.value === selectedMapMode.value)?.label || '筛选中',
     icon: Ship,
+    mapMode: 'all',
   },
   {
-    label: '系统 AIS 记录',
-    value: `${summary.value.totalObservations || 19}`,
-    detail: '接入首页态势研判的累计动态记录',
-    trend: 'Live',
+    label: 'AIS 记录总量',
+    value: `${riskSummary.value.total}`,
+    detail: '系统内累计纳入态势研判的 AIS 记录总数',
+    trend: datasetDateStats.value[0] ? `${datasetDateStats.value[0].recordCount} / 最新日` : '统计中',
     icon: DataAnalysis,
+    mapMode: null,
   },
   {
-    label: '港外等待',
-    value: '41 艘',
-    detail: '洛杉矶/长滩港外锚地与排序队列',
-    trend: '+6',
+    label: '低速目标',
+    value: `${riskSummary.value.lowSpeedCount}`,
+    detail: '航速低于 1 kn 的目标，用于观察等待、漂移与近停状态',
+    trend: riskSummary.value.lowSpeedCount > 0 ? '关注' : '平稳',
     icon: Aim,
+    mapMode: 'slow',
   },
   {
-    label: '风险热区',
-    value: `${riskZones.length + heatCells.length}`,
-    detail: '拥堵、交叉航迹、能见度与低速异常',
-    trend: '3 高亮',
-    icon: WarningFilled,
-  },
-  {
-    label: '重点航线',
-    value: `${routeSignals.length}`,
-    detail: '远洋主干线、沿岸线、南向支线与港内接驳',
-    trend: '4 条',
-    icon: LocationFilled,
-  },
-  {
-    label: '刷新延迟',
-    value: '14 min',
-    detail: '态势图层与报表摘要的最近同步间隔',
-    trend: '正常',
+    label: '疑似停泊',
+    value: `${riskSummary.value.stoppedCount}`,
+    detail: '锚泊、系泊或近静止状态的 AIS 记录数',
+    trend: riskSummary.value.stoppedCount > 0 ? '复核' : '正常',
     icon: Monitor,
+    mapMode: 'slow',
+  },
+  {
+    label: '风险备注',
+    value: `${riskSummary.value.abnormalNoteCount}`,
+    detail: '备注中包含异常、风险、告警或 warning 等关键词的记录',
+    trend: riskSummary.value.abnormalNoteCount > 0 ? '高亮' : '无新增',
+    icon: WarningFilled,
+    mapMode: 'risk',
+  },
+  {
+    label: '航运节点',
+    value: `${shippingZones.value.length}`,
+    detail: '已建档的港口、锚地、主航道与重点水域节点数量',
+    trend: '底座',
+    icon: LocationFilled,
+    mapMode: 'traffic',
   },
 ])
 
-const trendPoints = computed(() => (trendData.value.length ? trendData.value : fallbackTrend))
+const zoneInsights = computed<ZoneInsight[]>(() =>
+  focusZones.map((zone) => {
+    const items = filteredRecords.value.filter((record) => distanceMeters(record.latitude, record.longitude, zone.lat, zone.lng) <= zone.radiusMeters)
+    const speeds = items.map((record) => record.sog).filter((value): value is number => typeof value === 'number')
+    const avgSpeed = speeds.length ? `${(speeds.reduce((sum, value) => sum + value, 0) / speeds.length).toFixed(1)} kn` : '-'
+    const slowCount = items.filter((item) => isSlowRecord(item)).length
+    return {
+      id: zone.id,
+      name: zone.name,
+      detail: `${zone.detail}${slowCount ? ` 当前低速目标 ${slowCount} 条。` : ' 当前未见明显低速聚集。'}`,
+      count: items.length,
+      avgSpeed,
+      slowCount,
+      color: zone.color,
+    }
+  }),
+)
 
-const trendOption = computed<EChartsOption>(() => ({
-  color: ['#00e5ff'],
-  tooltip: {
-    trigger: 'axis',
-    backgroundColor: 'rgba(6, 10, 24, 0.92)',
-    borderColor: 'rgba(0, 229, 255, 0.24)',
-    textStyle: { color: '#e8f3ff' },
-  },
-  grid: { left: 36, right: 18, top: 34, bottom: 34 },
-  xAxis: {
-    type: 'category',
-    boundaryGap: false,
-    data: trendPoints.value.map((item) => item.name),
-    axisLine: { lineStyle: { color: 'rgba(232, 243, 255, 0.22)' } },
-    axisTick: { show: false },
-    axisLabel: { color: 'rgba(232, 243, 255, 0.62)' },
-  },
-  yAxis: {
-    type: 'value',
-    splitLine: { lineStyle: { color: 'rgba(232, 243, 255, 0.12)' } },
-    axisLabel: { color: 'rgba(232, 243, 255, 0.62)' },
-  },
-  series: [
-    {
-      name: 'AIS 动态',
-      data: trendPoints.value.map((item) => item.value),
-      type: 'line',
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 7,
-      areaStyle: { color: 'rgba(0, 229, 255, 0.18)' },
-      lineStyle: { color: '#00e5ff', width: 3 },
-      itemStyle: { color: '#20ff9f', borderColor: '#071224', borderWidth: 2 },
-    },
-  ],
-}))
+const alerts = computed<DashboardAlert[]>(() => {
+  const busiestZone = [...zoneInsights.value].sort((a, b) => b.count - a.count)[0]
+  return [
+    riskSummary.value.abnormalNoteCount > 0
+      ? {
+          level: 'critical',
+          levelLabel: '高',
+          title: '发现带风险备注的 AIS 记录',
+          detail: `当前累计 ${riskSummary.value.abnormalNoteCount} 条带风险/异常备注的记录，建议在 AIS 记录页重点核验。`,
+        }
+      : {
+          level: 'stable',
+          levelLabel: '稳',
+          title: '未发现新增风险备注聚集',
+          detail: '当前备注字段中未见显著异常、风险或 warning 关键词堆积。',
+        },
+    riskSummary.value.stoppedCount > 0
+      ? {
+          level: 'warning',
+          levelLabel: '中',
+          title: '低速或疑似停泊目标较多',
+          detail: `当前有 ${riskSummary.value.stoppedCount} 条停泊/近静止记录，需结合港区、锚地与航道位置判断是否异常。`,
+        }
+      : {
+          level: 'stable',
+          levelLabel: '稳',
+          title: '停泊目标保持可解释范围',
+          detail: '当前停泊/近静止记录未见异常放大，可继续观察下一轮数据更新。',
+        },
+    busiestZone
+      ? {
+          level: busiestZone.count >= 8 ? 'warning' : 'stable',
+          levelLabel: busiestZone.count >= 8 ? '中' : '稳',
+          title: `${busiestZone.name} 活跃度最高`,
+          detail: `该区域当前聚集 ${busiestZone.count} 个最新点位，平均航速 ${busiestZone.avgSpeed}。`,
+        }
+      : {
+          level: 'stable',
+          levelLabel: '稳',
+          title: '当前无区域聚集信号',
+          detail: '地图快照暂无足够点位生成区域焦点判断。',
+        },
+  ]
+})
 
-const routeLoadOption = computed<EChartsOption>(() => {
-  const activityFallback = routeSignals.map((route, index) => ({
-    name: route.name.slice(0, 4),
-    value: Number(route.volume.match(/\d+/)?.[0] || 0) + (observerActivity.value[index]?.value || 0),
-  }))
-
+const trendOption = computed<EChartsOption>(() => {
+  const items = [...datasetDateStats.value].slice(0, 30).reverse()
   return {
-    color: ['#20ff9f', '#ff4fd8'],
+    color: ['#00e5ff'],
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(6, 10, 24, 0.92)',
       borderColor: 'rgba(0, 229, 255, 0.24)',
       textStyle: { color: '#e8f3ff' },
     },
-    grid: { left: 36, right: 18, top: 34, bottom: 44 },
+    grid: { left: 36, right: 18, top: 34, bottom: 34 },
     xAxis: {
       type: 'category',
-      data: activityFallback.map((item) => item.name),
+      boundaryGap: false,
+      data: items.map((item) => item.datasetDate.slice(5)),
       axisLine: { lineStyle: { color: 'rgba(232, 243, 255, 0.22)' } },
       axisTick: { show: false },
       axisLabel: { color: 'rgba(232, 243, 255, 0.62)' },
@@ -629,221 +670,117 @@ const routeLoadOption = computed<EChartsOption>(() => {
     },
     series: [
       {
-        name: '日均载荷',
-        type: 'bar',
-        data: activityFallback.map((item) => item.value),
-        itemStyle: { borderRadius: [8, 8, 2, 2] },
+        name: 'AIS 记录数',
+        data: items.map((item) => item.recordCount),
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 7,
+        areaStyle: { color: 'rgba(0, 229, 255, 0.18)' },
+        lineStyle: { color: '#00e5ff', width: 3 },
+        itemStyle: { color: '#20ff9f', borderColor: '#071224', borderWidth: 2 },
       },
     ],
   }
 })
 
-function modeAllows(layer: 'traffic' | 'risk' | 'anchor') {
-  return selectedMapMode.value === 'all' || selectedMapMode.value === layer
+const importerOption = computed<EChartsOption>(() => ({
+  color: ['#20ff9f'],
+  tooltip: {
+    trigger: 'axis',
+    backgroundColor: 'rgba(6, 10, 24, 0.92)',
+    borderColor: 'rgba(0, 229, 255, 0.24)',
+    textStyle: { color: '#e8f3ff' },
+  },
+  grid: { left: 36, right: 18, top: 34, bottom: 44 },
+  xAxis: {
+    type: 'category',
+    data: importerStats.value.map((item) => item.label),
+    axisLine: { lineStyle: { color: 'rgba(232, 243, 255, 0.22)' } },
+    axisTick: { show: false },
+    axisLabel: { color: 'rgba(232, 243, 255, 0.62)', interval: 0, rotate: 16 },
+  },
+  yAxis: {
+    type: 'value',
+    splitLine: { lineStyle: { color: 'rgba(232, 243, 255, 0.12)' } },
+    axisLabel: { color: 'rgba(232, 243, 255, 0.62)' },
+  },
+  series: [
+    {
+      name: '记录数',
+      type: 'bar',
+      data: importerStats.value.map((item) => item.recordCount),
+      itemStyle: { borderRadius: [8, 8, 2, 2] },
+    },
+  ],
+}))
+
+function activeDatasetParam() {
+  return selectedDatasetDate.value || undefined
+}
+
+function isSlowRecord(record: AisRecordView) {
+  return (typeof record.sog === 'number' && record.sog < 1) || record.status === 1 || record.status === 5
+}
+
+function isActiveRecord(record: AisRecordView) {
+  return typeof record.sog === 'number' && record.sog >= 8
+}
+
+function hasRiskNote(record: AisRecordView) {
+  return /(异常|风险|告警|可疑|abnormal|risk|warning)/i.test(record.note || '')
+}
+
+function vesselName(record: AisRecordView) {
+  return record.vesselName || `MMSI ${record.mmsi}`
+}
+
+function displayTime(value?: string) {
+  if (!value) {
+    return '-'
+  }
+  return value.includes('T') ? value.replace('T', ' ') : value
+}
+
+function metricLabel(value: number | string | null | undefined, unit: string) {
+  if (value == null || value === '') {
+    return '-'
+  }
+  return `${value}${unit}`
+}
+
+function positionLabel(record: Pick<AisRecordView, 'latitude' | 'longitude'>) {
+  return `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`
+}
+
+function markerTone(record: AisRecordView): MarkerTone {
+  if (hasRiskNote(record)) return 'violet'
+  if (isActiveRecord(record)) return 'emerald'
+  return 'aqua'
+}
+
+function timestamp(value?: string) {
+  if (!value) {
+    return 0
+  }
+  return new Date(value.includes('T') ? value : value.replace(' ', 'T')).getTime()
 }
 
 function toLatLng(point: [number, number]) {
   return toMapDisplayPoint(point[0], point[1])
 }
 
-function createHeatColor(intensity: number) {
-  if (intensity > 0.85) {
-    return '#ff4f6a'
-  }
-  if (intensity > 0.7) {
-    return '#ffb84d'
-  }
-  return '#20ff9f'
+function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (value: number) => (value * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function createRiskColor(level: RiskZone['level']) {
-  if (level === 'high') {
-    return '#ff4f6a'
-  }
-  if (level === 'medium') {
-    return '#ffb84d'
-  }
-  return '#7c3cff'
-}
-
-function addPorts() {
-  if (!overlayLayer) {
-    return
-  }
-  const layer = overlayLayer
-
-  portSignals.forEach((port) => {
-    const marker = L.marker(toMapDisplayPoint(port.lat, port.lng), {
-      icon: createMapMarkerIcon(port.name, { tone: port.tone }),
-      zIndexOffset: 600,
-    })
-
-    marker
-      .bindTooltip(port.name, {
-        className: 'dashboard-map-tooltip',
-        direction: 'top',
-        offset: [0, -36],
-        permanent: true,
-      })
-      .bindPopup(
-        buildMapPopupCard({
-          eyebrow: port.kind,
-          title: port.name,
-          subtitle: port.status,
-          chips: [
-            { label: '泊位使用', value: `${port.berthUsage}%` },
-            { label: '等待队列', value: port.queue },
-          ],
-        }),
-        { className: 'gsmv-map-popup' },
-      )
-      .addTo(layer)
-  })
-}
-
-function addRoutes() {
-  if (!overlayLayer || !modeAllows('traffic')) {
-    return
-  }
-  const layer = overlayLayer
-
-  routeSignals.forEach((route) => {
-    const polyline = L.polyline(route.path.map(toLatLng), {
-      color: route.color,
-      weight: route.id === 'terminal-shuttle' ? 4 : 5,
-      opacity: 0.88,
-      dashArray: route.id === 'terminal-shuttle' ? '8 10' : undefined,
-      lineCap: 'round',
-    })
-
-    polyline
-      .bindPopup(
-        buildMapPopupCard({
-          eyebrow: 'Route Signal',
-          title: route.name,
-          subtitle: route.description,
-          chips: [
-            { label: '日均流量', value: route.volume },
-            { label: '风险', value: route.risk },
-          ],
-        }),
-        { className: 'gsmv-map-popup' },
-      )
-      .addTo(layer)
-
-    const endPoint = route.path.at(-1)
-    if (endPoint) {
-      L.circleMarker(toLatLng(endPoint), {
-        radius: 5,
-        color: route.color,
-        fillColor: route.color,
-        fillOpacity: 0.9,
-        weight: 2,
-      }).addTo(layer)
-    }
-  })
-}
-
-function addHeatCells() {
-  if (!overlayLayer) {
-    return
-  }
-  const layer = overlayLayer
-
-  heatCells
-    .filter((cell) => modeAllows(cell.type))
-    .forEach((cell) => {
-      const color = createHeatColor(cell.intensity)
-      L.circle(toMapDisplayPoint(cell.lat, cell.lng), {
-        radius: cell.radius,
-        color,
-        fillColor: color,
-        fillOpacity: 0.18 + cell.intensity * 0.2,
-        opacity: 0.7,
-        weight: 1.5,
-        className: 'dashboard-heat-cell',
-      })
-        .bindPopup(
-          buildMapPopupCard({
-            eyebrow: cell.type === 'anchor' ? 'Anchorage Heat' : 'Traffic Heat',
-            title: cell.name,
-            subtitle: cell.detail,
-            chips: [{ label: '热力强度', value: `${Math.round(cell.intensity * 100)}%` }],
-          }),
-          { className: 'gsmv-map-popup' },
-        )
-        .addTo(layer)
-    })
-}
-
-function addRiskZones() {
-  if (!overlayLayer || !modeAllows('risk')) {
-    return
-  }
-  const layer = overlayLayer
-
-  riskZones.forEach((zone) => {
-    const color = createRiskColor(zone.level)
-    L.circle(toMapDisplayPoint(zone.lat, zone.lng), {
-      radius: zone.radius,
-      color,
-      fillColor: color,
-      fillOpacity: 0.12,
-      opacity: 0.86,
-      weight: 2,
-      dashArray: zone.level === 'high' ? undefined : '7 8',
-    })
-      .bindPopup(
-        buildMapPopupCard({
-          eyebrow: 'Risk Zone',
-          title: zone.name,
-          subtitle: zone.detail,
-          chips: [{ label: '级别', value: zone.level === 'high' ? '高' : zone.level === 'medium' ? '中' : '观察' }],
-        }),
-        { className: 'gsmv-map-popup' },
-      )
-      .addTo(layer)
-  })
-}
-
-function addVesselTargets() {
-  if (!overlayLayer || selectedMapMode.value === 'risk') {
-    return
-  }
-  const layer = overlayLayer
-
-  vesselTargets.forEach((target) => {
-    L.marker(toMapDisplayPoint(target.lat, target.lng), {
-      icon: createMapMarkerIcon(target.name, { compact: true, tone: target.tone, active: target.status.includes('等待') }),
-      zIndexOffset: 500,
-    })
-      .bindPopup(
-        buildMapPopupCard({
-          eyebrow: 'AIS Target',
-          title: target.name,
-          subtitle: target.status,
-          chips: [{ label: '航速', value: target.speed }],
-        }),
-        { className: 'gsmv-map-popup' },
-      )
-      .addTo(layer)
-  })
-}
-
-function renderOperationsMap() {
-  if (!map || !overlayLayer) {
-    return
-  }
-
-  overlayLayer.clearLayers()
-  addHeatCells()
-  addRoutes()
-  addRiskZones()
-  addVesselTargets()
-  addPorts()
-}
-
-function initializeMap() {
+function ensureMap() {
   if (map || !mapRef.value) {
     return
   }
@@ -852,70 +789,285 @@ function initializeMap() {
     zoomControl: true,
     attributionControl: true,
     preferCanvas: true,
-  }).setView(toMapDisplayPoint(33.73, -118.28), 10)
+  }).setView(toMapDisplayPoint(defaultCenter[0], defaultCenter[1]), 8)
 
   addPreferredTileLayer(map)
   overlayLayer = L.layerGroup().addTo(map)
-  renderOperationsMap()
-
-  const bounds = L.latLngBounds([
-    toMapDisplayPoint(33.45, -118.62),
-    toMapDisplayPoint(34.02, -118.05),
-  ])
-  map.fitBounds(bounds, { padding: [26, 26], maxZoom: 11 })
+  markerLayer = L.markerClusterGroup({
+    showCoverageOnHover: false,
+    spiderfyOnMaxZoom: true,
+    zoomToBoundsOnClick: true,
+    disableClusteringAtZoom: 10,
+    maxClusterRadius: 40,
+  }).addTo(map)
 
   resizeObserver = new ResizeObserver(() => map?.invalidateSize(false))
   resizeObserver.observe(mapRef.value)
   window.setTimeout(() => map?.invalidateSize(false), 120)
 }
 
-async function loadDashboard() {
-  try {
-    const [summaryData, trend, observers] = await Promise.all([
-      fetchDashboardSummary(),
-      fetchObservationTrend(30),
-      fetchObservationActivity(30),
-    ])
+function popupHtml(record: AisRecordView) {
+  return buildMapPopupCard({
+    eyebrow: 'AIS Snapshot',
+    title: vesselName(record),
+    subtitle: `MMSI ${record.mmsi}`,
+    meta: displayTime(record.baseDateTime),
+    chips: [
+      { label: '航速', value: metricLabel(record.sog, 'kn') },
+      { label: '航向', value: metricLabel(record.cog, '°') },
+    ],
+    lines: [
+      `坐标 ${positionLabel(record)}`,
+      record.imo ? `IMO ${record.imo}` : '',
+      record.callSign ? `呼号 ${record.callSign}` : '',
+      record.sourceFile ? `来源 ${record.sourceFile}` : '',
+    ].filter(Boolean),
+  })
+}
 
-    summary.value = summaryData
-    trendData.value = trend
-    observerActivity.value = observers
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '态势总览加载失败，已保留港区态势示例图层')
+function renderMap() {
+  if (!map || !overlayLayer || !markerLayer) {
+    return
+  }
+  const routeOverlay = overlayLayer
+  const vesselMarkers = markerLayer
+
+  routeOverlay.clearLayers()
+  vesselMarkers.clearLayers()
+  markerMap.clear()
+
+  const routeMode = selectedMapMode.value === 'all' || selectedMapMode.value === 'traffic'
+  const riskMode = selectedMapMode.value === 'all' || selectedMapMode.value === 'risk'
+  const slowMode = selectedMapMode.value === 'all' || selectedMapMode.value === 'slow'
+
+  if (routeMode) {
+    routeSignals.forEach((route) => {
+      L.polyline(route.path.map(toLatLng), {
+        color: route.color,
+        weight: 4,
+        opacity: 0.84,
+      })
+        .bindPopup(
+          buildMapPopupCard({
+            eyebrow: 'Main Route',
+            title: route.name,
+            subtitle: route.description,
+          }),
+          { className: 'gsmv-map-popup' },
+        )
+        .addTo(routeOverlay)
+    })
+  }
+
+  focusZones.forEach((zone) => {
+    const insight = zoneInsights.value.find((item) => item.id === zone.id)
+    const slowRatio = insight && insight.count ? insight.slowCount / insight.count : 0
+    const emphasisColor = riskMode && slowRatio > 0.35 ? '#ff4f6a' : slowMode && insight?.slowCount ? '#ffb84d' : zone.color
+    L.circle(toMapDisplayPoint(zone.lat, zone.lng), {
+      radius: zone.radiusMeters,
+      color: emphasisColor,
+      fillColor: emphasisColor,
+      fillOpacity: 0.08,
+      opacity: 0.78,
+      weight: 2,
+      dashArray: riskMode ? '8 10' : undefined,
+    })
+      .bindPopup(
+        buildMapPopupCard({
+          eyebrow: zone.kind,
+          title: zone.name,
+          subtitle: zone.detail,
+          chips: [
+            { label: '快照点位', value: `${insight?.count || 0}` },
+            { label: '平均航速', value: insight?.avgSpeed || '-' },
+          ],
+        }),
+        { className: 'gsmv-map-popup' },
+      )
+      .addTo(routeOverlay)
+  })
+
+  const bounds: [number, number][] = []
+  filteredRecords.value.forEach((record) => {
+    const point = toMapDisplayPoint(record.latitude, record.longitude)
+    const marker = L.marker(point, {
+      icon: createMapMarkerIcon(vesselName(record), {
+        compact: true,
+        active: focusRecord.value?.id === record.id,
+        tone: markerTone(record),
+      }),
+      zIndexOffset: focusRecord.value?.id === record.id ? 900 : 0,
+    })
+
+    marker
+      .bindPopup(popupHtml(record), { className: 'gsmv-map-popup' })
+      .on('click', () => {
+        selectedRecordId.value = record.id
+      })
+      .addTo(vesselMarkers)
+
+    markerMap.set(record.id, marker)
+    bounds.push(point)
+  })
+
+  if (bounds.length === 1) {
+    map.setView(bounds[0], 9, { animate: false })
+  } else if (bounds.length > 1) {
+    map.fitBounds(bounds, { padding: [26, 26], maxZoom: 10 })
+  } else {
+    map.setView(toMapDisplayPoint(defaultCenter[0], defaultCenter[1]), 7)
   }
 }
 
+async function loadOverview() {
+  loading.value = true
+  try {
+    const [dates, mapData, dateStats, importers, risk, nodeOptions] = await Promise.all([
+      fetchAisDatasetDates(),
+      fetchAisMapRecords({
+        datasetDate: activeDatasetParam(),
+        limit: MAP_LIMIT,
+      }),
+      fetchAisDatasetDateStats({}),
+      fetchAisImporterStats({ limit: 6 }),
+      fetchAisRiskSummary({}),
+      fetchAllShippingZones(),
+    ])
+
+    datasetDates.value = dates
+    if (selectedDatasetDate.value && !dates.includes(selectedDatasetDate.value)) {
+      selectedDatasetDate.value = ''
+    }
+
+    records.value = [...mapData.items].sort((a, b) => timestamp(b.baseDateTime) - timestamp(a.baseDateTime))
+    datasetDateStats.value = dateStats
+    importerStats.value = importers
+    riskSummary.value = risk
+    shippingZones.value = nodeOptions
+
+    if (!records.value.some((item) => item.id === selectedRecordId.value)) {
+      selectedRecordId.value = records.value[0]?.id || ''
+    }
+
+    renderMap()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '态势总览加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function resetSelectedDate() {
+  stopTimelinePlayback()
+  selectedDatasetDate.value = ''
+  void loadOverview()
+}
+
+function selectAdjacentDate(step: -1 | 1) {
+  if (!datasetDates.value.length) {
+    return
+  }
+
+  const current = activeDatasetIndex.value >= 0 ? activeDatasetIndex.value : 0
+  const nextIndex = current - step
+  if (nextIndex < 0 || nextIndex >= datasetDates.value.length) {
+    return
+  }
+  stopTimelinePlayback()
+  selectedDatasetDate.value = datasetDates.value[nextIndex]
+  void loadOverview()
+}
+
+function startTimelinePlayback() {
+  stopTimelinePlayback()
+  if (!datasetDates.value.length) {
+    return
+  }
+  playingTimeline.value = true
+  if (!selectedDatasetDate.value) {
+    selectedDatasetDate.value = datasetDates.value[0]
+    void loadOverview()
+  }
+  playbackTimer = window.setInterval(() => {
+    if (!datasetDates.value.length) {
+      stopTimelinePlayback()
+      return
+    }
+    const current = activeDatasetIndex.value >= 0 ? activeDatasetIndex.value : 0
+    const nextIndex = current + 1 >= datasetDates.value.length ? 0 : current + 1
+    selectedDatasetDate.value = datasetDates.value[nextIndex]
+    void loadOverview()
+  }, playbackSpeed.value)
+}
+
+function stopTimelinePlayback() {
+  playingTimeline.value = false
+  if (playbackTimer) {
+    window.clearInterval(playbackTimer)
+    playbackTimer = null
+  }
+}
+
+function toggleTimelinePlayback() {
+  if (playingTimeline.value) {
+    stopTimelinePlayback()
+    return
+  }
+  startTimelinePlayback()
+}
+
+function handleKpiCardClick(item: KpiCard) {
+  if (!item.mapMode) {
+    return
+  }
+  selectedMapMode.value = item.mapMode
+}
+
 watch(selectedMapMode, () => {
-  renderOperationsMap()
+  renderMap()
 })
 
-onMounted(async () => {
-  await nextTick()
-  initializeMap()
-  updateWeatherTime()
-  timeTimer = setInterval(updateWeatherTime, 1000)
-  void loadWeather()
-  stopDataSync = listenDataChanged((detail) => {
-    if (['species', 'observation', 'ecosystem', 'user'].includes(detail.type)) {
-      void loadDashboard()
+watch(selectedDatasetDate, (value, previous) => {
+  if (value === previous) {
+    return
+  }
+  void loadOverview()
+})
+
+watch(
+  () => selectedRecordId.value,
+  (id) => {
+    if (!id || !map) {
+      return
     }
-  })
-  void loadDashboard()
+    const marker = markerMap.get(id)
+    if (marker) {
+      marker.openPopup()
+    }
+    renderMap()
+  },
+)
+
+onMounted(async () => {
+  updateWeatherTime()
+  weatherTimer = setInterval(updateWeatherTime, 1000)
+  void loadWeather()
+  await nextTick()
+  ensureMap()
+  void loadOverview()
 })
 
 onBeforeUnmount(() => {
-  stopDataSync?.()
-  resizeObserver?.disconnect()
-  resizeObserver = null
+  stopTimelinePlayback()
   if (weatherTimer) {
     clearInterval(weatherTimer)
     weatherTimer = null
   }
-  if (timeTimer) {
-    clearInterval(timeTimer)
-    timeTimer = null
-  }
+  resizeObserver?.disconnect()
+  resizeObserver = null
   overlayLayer = null
+  markerLayer = null
+  markerMap.clear()
   map?.remove()
   map = null
 })
@@ -967,8 +1119,8 @@ onBeforeUnmount(() => {
 .dashboard-window,
 .dashboard-window__metric,
 .dashboard-window__column,
-.dashboard-focus-item,
-.dashboard-route-card {
+.dashboard-route-card,
+.dashboard-alert {
   position: relative;
   border: 1px solid var(--gsmv-border);
   background:
@@ -982,8 +1134,8 @@ onBeforeUnmount(() => {
 .dashboard-window::after,
 .dashboard-window__metric::after,
 .dashboard-window__column::after,
-.dashboard-focus-item::after,
-.dashboard-route-card::after {
+.dashboard-route-card::after,
+.dashboard-alert::after {
   content: "";
   position: absolute;
   inset: auto -18% -42% 42%;
@@ -999,6 +1151,24 @@ onBeforeUnmount(() => {
   min-height: 128px;
   padding: 16px;
   border-radius: 22px;
+}
+
+.dashboard-window__metric.is-interactive {
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.dashboard-window__metric.is-interactive:hover,
+.dashboard-window__metric.is-active {
+  transform: translateY(-2px);
+  border-color: rgba(0, 229, 255, 0.32);
+  box-shadow:
+    0 18px 34px rgba(0, 10, 34, 0.2),
+    0 0 0 1px rgba(0, 229, 255, 0.1) inset;
 }
 
 .dashboard-window__metric-icon {
@@ -1121,6 +1291,51 @@ onBeforeUnmount(() => {
   background: rgba(0, 229, 255, 0.14);
   color: #ffffff;
   transform: translateY(-1px);
+}
+
+.dashboard-map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 0 18px 14px;
+}
+
+.dashboard-map-toolbar__date {
+  width: 220px;
+}
+
+.dashboard-map-toolbar__speed {
+  width: 150px;
+}
+
+.dashboard-map-toolbar__snapshot {
+  display: grid;
+  color: rgba(232, 243, 255, 0.66);
+  font-size: 13px;
+}
+
+.dashboard-map-toolbar__snapshot small {
+  color: rgba(232, 243, 255, 0.52);
+  font-size: 11px;
+}
+
+.dashboard-map-toolbar__snapshot small.is-up {
+  color: #ff7b7b;
+}
+
+.dashboard-map-toolbar__snapshot small.is-down {
+  color: #20ff9f;
+}
+
+.dashboard-map-toolbar__snapshot small.is-neutral {
+  color: rgba(232, 243, 255, 0.52);
+}
+
+.dashboard-map-toolbar :deep(.el-button.is-playing) {
+  --el-button-bg-color: rgba(255, 184, 77, 0.18);
+  --el-button-border-color: rgba(255, 184, 77, 0.42);
+  --el-button-text-color: #ffe1a8;
 }
 
 .dashboard-map-stage {
@@ -1258,7 +1473,7 @@ onBeforeUnmount(() => {
   border-radius: 26px;
 }
 
-.dashboard-focus-list,
+.dashboard-focus-vessel,
 .dashboard-alert-list,
 .dashboard-route-list {
   position: relative;
@@ -1268,16 +1483,18 @@ onBeforeUnmount(() => {
   padding: 14px;
 }
 
-.dashboard-focus-item {
-  display: flex;
-  justify-content: space-between;
+.dashboard-focus-vessel {
   gap: 14px;
-  min-height: 106px;
-  padding: 14px;
-  border-radius: 20px;
 }
 
-.dashboard-focus-item span,
+.dashboard-focus-vessel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.dashboard-focus-vessel__header span,
 .dashboard-alert span {
   color: var(--gsmv-primary);
   font-size: 11px;
@@ -1285,7 +1502,7 @@ onBeforeUnmount(() => {
   letter-spacing: 0.12em;
 }
 
-.dashboard-focus-item strong,
+.dashboard-focus-vessel__header strong,
 .dashboard-alert strong,
 .dashboard-route-card strong {
   display: block;
@@ -1294,33 +1511,24 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
-.dashboard-focus-item p,
-.dashboard-alert p,
-.dashboard-route-card p {
-  margin: 8px 0 0;
-  color: rgba(232, 243, 255, 0.62);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.dashboard-focus-item__score {
-  flex: 0 0 76px;
+.dashboard-focus-vessel__meta {
   display: grid;
-  place-items: center;
-  align-self: stretch;
-  border: 1px solid rgba(0, 229, 255, 0.16);
-  border-radius: 18px;
-  background: rgba(0, 229, 255, 0.08);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.dashboard-focus-item__score b {
-  color: var(--gsmv-accent);
-  font-size: 20px;
+.dashboard-focus-vessel__meta small {
+  display: block;
+  color: rgba(232, 243, 255, 0.58);
+  font-size: 12px;
 }
 
-.dashboard-focus-item__score small {
-  color: rgba(232, 243, 255, 0.56);
-  font-size: 11px;
+.dashboard-focus-vessel__meta strong {
+  display: block;
+  margin-top: 6px;
+  color: #f4fbff;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 .dashboard-alert {
@@ -1328,6 +1536,14 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.055);
+}
+
+.dashboard-alert p,
+.dashboard-route-card p {
+  margin: 8px 0 0;
+  color: rgba(232, 243, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .dashboard-alert.is-critical {
@@ -1355,127 +1571,6 @@ onBeforeUnmount(() => {
 
 .dashboard-alert.is-stable span {
   color: var(--gsmv-accent);
-}
-
-.dashboard-weather-panel__time {
-  display: block;
-  margin-top: 4px;
-  color: rgba(232, 243, 255, 0.56);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-}
-
-.dashboard-weather-panel__body {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-}
-
-.dashboard-weather-panel__status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: rgba(232, 243, 255, 0.72);
-  font-size: 13px;
-  min-height: 80px;
-}
-
-.dashboard-weather-panel__spin {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(0, 229, 255, 0.28);
-  border-top-color: var(--gsmv-primary);
-  border-radius: 50%;
-  animation: dashboard-spin 0.8s linear infinite;
-}
-
-.dashboard-weather-panel__error {
-  color: var(--gsmv-danger);
-  line-height: 1.55;
-}
-
-.dashboard-weather-panel__result {
-  display: grid;
-  gap: 12px;
-}
-
-.dashboard-weather-panel__interpretation {
-  padding: 12px;
-  border: 1px solid rgba(32, 255, 159, 0.22);
-  border-radius: 14px;
-  background: rgba(32, 255, 159, 0.08);
-}
-
-.dashboard-weather-panel__interpretation strong {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--gsmv-accent);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.dashboard-weather-panel__interpretation p {
-  margin: 0;
-  color: #e8f3ff;
-  font-size: 13px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
-
-.dashboard-weather-panel__raw {
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.dashboard-weather-panel__raw strong {
-  display: block;
-  margin-bottom: 6px;
-  color: rgba(232, 243, 255, 0.62);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.dashboard-weather-panel__raw pre {
-  margin: 0;
-  color: rgba(232, 243, 255, 0.72);
-  font-size: 12px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-}
-
-.dashboard-weather-panel__hint {
-  margin: 4px 0 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 184, 77, 0.2);
-  border-radius: 12px;
-  background: rgba(255, 184, 77, 0.08);
-  color: rgba(232, 243, 255, 0.68);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.dashboard-weather-panel__hint a {
-  color: var(--gsmv-primary);
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.dashboard-weather-panel__hint a:hover {
-  text-decoration: underline;
-}
-
-@keyframes dashboard-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .dashboard-lower-grid {
@@ -1534,27 +1629,6 @@ onBeforeUnmount(() => {
   }
 }
 
-:global(.dashboard-map-tooltip) {
-  border: 1px solid rgba(0, 229, 255, 0.24) !important;
-  border-radius: 999px !important;
-  background: rgba(5, 8, 22, 0.82) !important;
-  box-shadow: 0 14px 30px rgba(0, 4, 18, 0.32) !important;
-  color: #e8f3ff !important;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  padding: 7px 10px !important;
-  backdrop-filter: blur(14px);
-}
-
-:global(.dashboard-map-tooltip::before) {
-  display: none;
-}
-
-:global(.dashboard-heat-cell) {
-  filter: drop-shadow(0 0 18px rgba(255, 184, 77, 0.28));
-}
-
 @media (prefers-reduced-motion: reduce) {
   .dashboard-map-stage__scan {
     animation: none;
@@ -1570,10 +1644,6 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-intel-rail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .dashboard-lower-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -1581,13 +1651,16 @@ onBeforeUnmount(() => {
 
 @media (max-width: 980px) {
   .dashboard-kpi-grid,
-  .dashboard-intel-rail,
   .dashboard-lower-grid {
     grid-template-columns: 1fr;
   }
 
   .dashboard-map {
     min-height: 460px;
+  }
+
+  .dashboard-focus-vessel__meta {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1600,6 +1673,14 @@ onBeforeUnmount(() => {
   .dashboard-map-modes {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .dashboard-map-toolbar {
+    padding: 0 14px 14px;
+  }
+
+  .dashboard-map-toolbar__date {
+    width: 100%;
   }
 
   .dashboard-map-stage {
@@ -1631,5 +1712,115 @@ onBeforeUnmount(() => {
   .dashboard-route-card > span {
     grid-column: 2;
   }
+}
+
+/* ==================== 天气面板 ==================== */
+.dashboard-weather-panel__time {
+  display: block;
+  font-size: 13px;
+  color: var(--gsmv-muted);
+  margin-top: 2px;
+  font-family: 'Courier New', monospace;
+}
+
+.dashboard-weather-panel__body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.dashboard-weather-panel__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gsmv-muted);
+  font-size: 14px;
+}
+
+.dashboard-weather-panel__spin {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--gsmv-border);
+  border-top-color: var(--gsmv-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-weather-panel__error {
+  color: var(--gsmv-warm);
+}
+
+.dashboard-weather-panel__result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-weather-panel__interpretation {
+  padding: 12px;
+  background: rgba(0, 229, 255, 0.08);
+  border-radius: 10px;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+}
+
+.dashboard-weather-panel__interpretation strong {
+  display: block;
+  font-size: 13px;
+  color: var(--gsmv-primary);
+  margin-bottom: 8px;
+}
+
+.dashboard-weather-panel__interpretation p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--gsmv-text);
+}
+
+.dashboard-weather-panel__raw {
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-weather-panel__raw strong {
+  display: block;
+  font-size: 12px;
+  color: var(--gsmv-muted);
+  margin-bottom: 6px;
+}
+
+.dashboard-weather-panel__raw pre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--gsmv-text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.dashboard-weather-panel__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--gsmv-muted);
+  line-height: 1.55;
+}
+
+.dashboard-weather-panel__hint a {
+  color: var(--gsmv-primary);
+  text-decoration: none;
+}
+
+.dashboard-weather-panel__hint a:hover {
+  text-decoration: underline;
 }
 </style>

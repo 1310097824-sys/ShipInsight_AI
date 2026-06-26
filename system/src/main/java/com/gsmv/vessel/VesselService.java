@@ -1,5 +1,12 @@
 package com.gsmv.vessel;
 
+import com.gsmv.ais.AisService;
+import com.gsmv.ais.dto.AisRecordView;
+import com.gsmv.ais.dto.AisVesselDraftBatchRequest;
+import com.gsmv.ais.dto.AisVesselDraftBatchResult;
+import com.gsmv.ais.dto.AisVesselDraftCandidate;
+import com.gsmv.ais.dto.AisVesselSummaryView;
+import com.gsmv.ai.rag.RagKnowledgeService;
 import com.gsmv.audit.service.AuditService;
 import com.gsmv.common.ErrorCode;
 import com.gsmv.common.PageResponse;
@@ -32,6 +39,9 @@ import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -44,19 +54,29 @@ public class VesselService {
     private final MediaFileService mediaFileService;
     private final AuditService auditService;
     private final EntityVersionService entityVersionService;
+    private final AisService aisService;
+    private final RagKnowledgeService ragKnowledgeService;
+    private final TransactionTemplate requiresNewTransactionTemplate;
 
     public VesselService(
             VesselMapper vesselMapper,
             VesselTypeMapper vesselTypeMapper,
             MediaFileService mediaFileService,
             AuditService auditService,
-            EntityVersionService entityVersionService
+            EntityVersionService entityVersionService,
+            AisService aisService,
+            RagKnowledgeService ragKnowledgeService,
+            PlatformTransactionManager transactionManager
     ) {
         this.vesselMapper = vesselMapper;
         this.vesselTypeMapper = vesselTypeMapper;
         this.mediaFileService = mediaFileService;
         this.auditService = auditService;
         this.entityVersionService = entityVersionService;
+        this.aisService = aisService;
+        this.ragKnowledgeService = ragKnowledgeService;
+        this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     public PageResponse<VesselView> listVessels(
@@ -102,9 +122,23 @@ public class VesselService {
         return new PageResponse<>(items, total, safePage, safeSize);
     }
 
+    public long countVessels() {
+        return vesselMapper.count(null, null, null, null, null, null);
+    }
+
     public VesselDetailView getVessel(Long id) {
         VesselRow row = requireVesselRow(id);
         return toDetailView(row, toTypeMap(vesselTypeMapper.findAll()));
+    }
+
+    public AisVesselSummaryView getAisSummary(Long id) {
+        VesselRow row = requireVesselRow(id);
+        return aisService.vesselSummary(row.mmsi(), row.imo());
+    }
+
+    public PageResponse<AisRecordView> listAisRecords(Long id, int page, int size) {
+        VesselRow row = requireVesselRow(id);
+        return aisService.listForVessel(row.mmsi(), row.imo(), page, size);
     }
 
     public List<EntityVersionView> listVersions(Long id) {
@@ -143,7 +177,73 @@ public class VesselService {
         );
         auditService.record(currentUserId, "VESSEL", "CREATE", "VESSEL", vessel.getId(), true,
                 "{\"vesselName\":\"" + escapeJson(detail.vesselName()) + "\"}");
+        ragKnowledgeService.syncVessel(vessel.getId());
         return detail;
+    }
+
+    public AisVesselDraftBatchResult generateVesselDraftsFromAis(AisVesselDraftBatchRequest request) {
+        int created = 0;
+        int skippedExisting = 0;
+        int skippedInvalid = 0;
+        int scanned = 0;
+        int requestedLimit = request == null || request.limit() == null ? 0 : request.limit();
+        int remaining = requestedLimit > 0 ? requestedLimit : Integer.MAX_VALUE;
+        final int batchSize = 1000;
+        int offset = 0;
+
+        while (remaining > 0) {
+            int currentBatchLimit = Math.min(batchSize, remaining);
+            List<AisVesselDraftCandidate> candidates = aisService.vesselDraftCandidates(
+                    request == null ? null : request.keyword(),
+                    request == null ? null : request.observedFrom(),
+                    request == null ? null : request.observedTo(),
+                    currentBatchLimit,
+                    offset
+            );
+            if (candidates.isEmpty()) {
+                break;
+            }
+
+            int batchProcessed = 0;
+            for (AisVesselDraftCandidate candidate : candidates) {
+                String mmsi = normalizeNullable(candidate.mmsi());
+                String imo = normalizeNullable(candidate.imo());
+                if (mmsi == null && imo == null) {
+                    skippedInvalid++;
+                    batchProcessed++;
+                    continue;
+                }
+                if (identityExists(mmsi, imo)) {
+                    skippedExisting++;
+                    batchProcessed++;
+                    continue;
+                }
+                try {
+                    requiresNewTransactionTemplate.executeWithoutResult(status ->
+                            createVessel(toVesselDraftRequest(candidate, mmsi, imo)));
+                    created++;
+                    batchProcessed++;
+                } catch (BusinessException ex) {
+                    if (ErrorCode.CONFLICT.equals(ex.getCode())) {
+                        skippedExisting++;
+                        batchProcessed++;
+                    } else {
+                        throw ex;
+                    }
+                }
+            }
+
+            scanned += batchProcessed;
+            offset += candidates.size();
+            if (requestedLimit > 0) {
+                remaining -= batchProcessed;
+            }
+            if (batchProcessed == 0 || candidates.size() < currentBatchLimit) {
+                break;
+            }
+        }
+
+        return new AisVesselDraftBatchResult(scanned, created, skippedExisting, skippedInvalid, requestedLimit);
     }
 
     @Transactional
@@ -171,6 +271,7 @@ public class VesselService {
         );
         auditService.record(currentUserId, "VESSEL", "UPDATE", "VESSEL", id, true,
                 "{\"vesselName\":\"" + escapeJson(detail.vesselName()) + "\"}");
+        ragKnowledgeService.syncVessel(id);
         return detail;
     }
 
@@ -195,6 +296,7 @@ public class VesselService {
         );
         auditService.record(currentUserId, "VESSEL", "ARCHIVE", "VESSEL", id, true,
                 "{\"vesselId\":" + id + "}");
+        ragKnowledgeService.markSourceDeleted(RagKnowledgeService.SOURCE_VESSEL, id);
     }
 
     @Transactional
@@ -229,6 +331,7 @@ public class VesselService {
         );
         auditService.record(currentUserId, "VESSEL", "ROLLBACK", "VESSEL", id, true,
                 "{\"versionId\":" + versionId + "}");
+        ragKnowledgeService.syncVessel(id);
         return detail;
     }
 
@@ -268,6 +371,42 @@ public class VesselService {
         if (imo != null && vesselMapper.findByImo(imo, excludeId) != null) {
             throw new BusinessException(ErrorCode.CONFLICT, "IMO 已存在，请检查是否重复建档", HttpStatus.CONFLICT);
         }
+    }
+
+    private boolean identityExists(String mmsi, String imo) {
+        if (mmsi != null && vesselMapper.findByMmsi(mmsi, null) != null) {
+            return true;
+        }
+        return imo != null && vesselMapper.findByImo(imo, null) != null;
+    }
+
+    private VesselSaveRequest toVesselDraftRequest(AisVesselDraftCandidate candidate, String mmsi, String imo) {
+        String vesselName = firstNonBlank(candidate.vesselName(), mmsi == null ? null : "MMSI " + mmsi, imo == null ? null : "IMO " + imo);
+        String observedAt = candidate.baseDateTime() == null ? "未知" : candidate.baseDateTime().toString().replace('T', ' ');
+        String sourceFile = firstNonBlank(candidate.sourceFile(), "未知");
+        return new VesselSaveRequest(
+                vesselName,
+                mmsi,
+                imo,
+                normalizeNullable(candidate.callSign()),
+                null,
+                null,
+                null,
+                null,
+                candidate.length(),
+                candidate.width(),
+                candidate.draft(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "该船舶档案由 AIS 批量生成，MMSI/IMO 已用于动态关联，投入使用前需人工核验。",
+                "由 AIS 记录 " + candidate.recordId() + " 批量生成；来源文件：" + sourceFile + "；接收时间：" + observedAt + "。",
+                1
+        );
     }
 
     private void validateType(Long typeId) {
@@ -451,6 +590,15 @@ public class VesselService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private String decimalToString(BigDecimal value) {

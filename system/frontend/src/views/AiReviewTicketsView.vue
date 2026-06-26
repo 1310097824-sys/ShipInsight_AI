@@ -45,7 +45,7 @@
         </el-table-column>
         <el-table-column label="AI 判断" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.likelyChineseName || row.likelyScientificName || '-' }}
+            {{ row.likelyDisplayName || row.likelyProfileName || '-' }}
           </template>
         </el-table-column>
         <el-table-column label="置信度" width="110">
@@ -113,8 +113,8 @@
             </div>
 
             <div class="review-detail__summary">
-              <strong>{{ detail.likelyChineseName || detail.likelyScientificName || '待人工确认' }}</strong>
-              <span>{{ detail.likelyScientificName || '未返回 MMSI / IMO' }}</span>
+              <strong>{{ detail.likelyDisplayName || detail.likelyProfileName || '待人工确认' }}</strong>
+              <span>{{ detail.likelyProfileName || '未返回 MMSI / IMO' }}</span>
               <div class="review-detail__tags">
                 <el-tag effect="plain">工单 #{{ detail.id }}</el-tag>
                 <el-tag :type="statusTagType(detail.status)">{{ statusLabel(detail.status) }}</el-tag>
@@ -149,14 +149,14 @@
             </div>
           </div>
 
-          <div v-if="detail.relatedSpeciesRecords.length" class="review-detail__section">
+          <div v-if="detail.relatedVesselRecords.length" class="review-detail__section">
             <h3>系统内已有船舶档案</h3>
             <div class="candidate-list">
-              <div v-for="item in detail.relatedSpeciesRecords" :key="item.id" class="candidate-item">
-                <strong>{{ item.chineseName || item.scientificName }}</strong>
-                <span>{{ item.scientificName }}</span>
+              <div v-for="item in detail.relatedVesselRecords" :key="item.id" class="candidate-item">
+                <strong>{{ item.displayName || item.profileName }}</strong>
+                <span>{{ item.profileName }}</span>
                 <small>{{ item.classificationPath || '暂无船型路径' }}</small>
-                <p>{{ [item.protectionLevel, item.iucnStatus].filter(Boolean).join(' / ') || '暂无风险等级信息' }}</p>
+                <p>{{ [item.riskLevel, item.operationalStatus].filter(Boolean).join(' / ') || '暂无风险等级信息' }}</p>
               </div>
             </div>
           </div>
@@ -211,17 +211,17 @@
 
               <el-form-item label="关联已有船舶档案">
                 <el-select
-                  v-model="resolveForm.finalSpeciesId"
+                  v-model="resolveForm.finalVesselId"
                   filterable
                   clearable
                   style="width: 100%"
                   placeholder="可选择系统内已有船舶档案自动回填名称"
-                  @change="handleSpeciesChange"
+                  @change="handleVesselChange"
                 >
                   <el-option
-                    v-for="item in speciesOptions"
+                    v-for="item in vesselOptions"
                     :key="item.id"
-                    :label="`${item.scientificName}${item.chineseName ? ` / ${item.chineseName}` : ''}`"
+                    :label="`${item.profileName}${item.displayName ? ` / ${item.displayName}` : ''}`"
                     :value="item.id"
                   />
                 </el-select>
@@ -251,11 +251,11 @@
 
               <div class="review-form__actions">
                 <el-button
-                  v-if="resolveForm.finalSpeciesId"
+                  v-if="resolveForm.finalVesselId"
                   type="success"
                   plain
                   :loading="linking"
-                  @click="linkSelectedSpecies"
+                  @click="linkSelectedVessel"
                 >
                   一键关联已有档案
                 </el-button>
@@ -277,16 +277,16 @@ import {
   fetchAiReviewImageBlob,
   fetchAiReviewTicketDetail,
   fetchAiReviewTickets,
-  linkAiReviewTicketSpecies,
+  linkAiReviewTicketVessel,
   rejectAiReviewTicket,
   resolveAiReviewTicket,
   resubmitAiReviewTicket,
   startAiReviewTicket,
 } from '@/api/aiReview'
-import { fetchSpecies } from '@/api/species'
+import { fetchVesselProfiles } from '@/api/species'
 import { useAuthStore } from '@/stores/auth'
 import { listenDataChanged, notifyDataChanged } from '@/utils/dataSync'
-import type { AiReviewTicketDetailView, AiReviewTicketView, SpeciesView } from '@/types/gsmv'
+import type { AiReviewTicketDetailView, AiReviewTicketView, VesselProfileView } from '@/types/gsmv'
 
 const authStore = useAuthStore()
 
@@ -299,7 +299,7 @@ const resubmitting = ref(false)
 const linking = ref(false)
 const rows = ref<AiReviewTicketView[]>([])
 const detail = ref<AiReviewTicketDetailView | null>(null)
-const speciesOptions = ref<SpeciesView[]>([])
+const vesselOptions = ref<VesselProfileView[]>([])
 const ticketImageUrls = ref<Record<number, string>>({})
 let stopDataSync: (() => void) | undefined
 
@@ -319,7 +319,7 @@ const pagination = reactive({
 
 const resolveForm = reactive({
   resolutionCode: 'CONFIRMED',
-  finalSpeciesId: undefined as number | undefined,
+  finalVesselId: undefined as number | undefined,
   finalChineseName: '',
   finalScientificName: '',
   reviewNote: '',
@@ -425,18 +425,18 @@ function revokeAllTicketImages() {
 
 function fillResolveForm(ticket: AiReviewTicketDetailView) {
   resolveForm.resolutionCode = ticket.resolutionCode || 'CONFIRMED'
-  resolveForm.finalSpeciesId = ticket.finalSpeciesId
+  resolveForm.finalVesselId = ticket.finalVesselId
   resolveForm.finalChineseName = ticket.finalChineseName || ''
   resolveForm.finalScientificName = ticket.finalScientificName || ''
   resolveForm.reviewNote = ticket.reviewNote || ''
 }
 
-async function loadSpeciesOptions() {
+async function loadVesselOptions() {
   if (!canWrite.value) {
     return
   }
-  const pageData = await fetchSpecies({ status: 1, page: 1, size: 200 })
-  speciesOptions.value = pageData.items
+  const pageData = await fetchVesselProfiles({ status: 1, page: 1, size: 200 })
+  vesselOptions.value = pageData.items
 }
 
 async function loadData() {
@@ -506,13 +506,13 @@ async function startReview(id?: number) {
   }
 }
 
-function handleSpeciesChange(speciesId?: number) {
-  const species = speciesOptions.value.find((item) => item.id === speciesId)
-  if (!species) {
+function handleVesselChange(vesselId?: number) {
+  const vessel = vesselOptions.value.find((item) => item.id === vesselId)
+  if (!vessel) {
     return
   }
-  resolveForm.finalChineseName = species.chineseName || ''
-  resolveForm.finalScientificName = species.scientificName || ''
+  resolveForm.finalChineseName = vessel.displayName || ''
+  resolveForm.finalScientificName = vessel.profileName || ''
 }
 
 async function submitResolution() {
@@ -528,7 +528,7 @@ async function submitResolution() {
   try {
     const ticket = await resolveAiReviewTicket(detail.value.id, {
       resolutionCode: resolveForm.resolutionCode,
-      finalSpeciesId: resolveForm.finalSpeciesId,
+      finalVesselId: resolveForm.finalVesselId,
       finalChineseName: resolveForm.finalChineseName || undefined,
       finalScientificName: resolveForm.finalScientificName || undefined,
       reviewNote: resolveForm.reviewNote.trim(),
@@ -594,8 +594,8 @@ async function resubmitTicket(id?: number) {
   }
 }
 
-async function linkSelectedSpecies() {
-  if (!detail.value || !resolveForm.finalSpeciesId) {
+async function linkSelectedVessel() {
+  if (!detail.value || !resolveForm.finalVesselId) {
     ElMessage.warning('请先选择要关联的船舶档案')
     return
   }
@@ -606,8 +606,8 @@ async function linkSelectedSpecies() {
 
   linking.value = true
   try {
-    const ticket = await linkAiReviewTicketSpecies(detail.value.id, {
-      finalSpeciesId: resolveForm.finalSpeciesId,
+    const ticket = await linkAiReviewTicketVessel(detail.value.id, {
+      finalVesselId: resolveForm.finalVesselId,
       reviewNote: resolveForm.reviewNote.trim(),
     })
     detail.value = ticket
@@ -628,7 +628,7 @@ onMounted(async () => {
       void loadData()
     }
   })
-  await Promise.all([loadData(), loadSpeciesOptions()])
+  await Promise.all([loadData(), loadVesselOptions()])
 })
 
 onBeforeUnmount(() => {

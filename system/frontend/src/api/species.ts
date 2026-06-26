@@ -1,52 +1,52 @@
 import { http, unwrap } from '@/api/http'
-import type { EntityVersionView, PageResponse, SpeciesDetailView, SpeciesImageView, SpeciesView, TaxonOption } from '@/types/gsmv'
+import type { EntityVersionView, PageResponse, VesselProfileDetailView, VesselProfileImageView, VesselProfileView, VesselTypeCategoryOption } from '@/types/gsmv'
 
-export function fetchSpecies(params: {
+export function fetchVesselProfiles(params: {
   keyword?: string
   status?: number
-  protectionLevel?: string
-  iucnStatus?: string
-  distributionKeyword?: string
-  taxonId?: number
+  riskLevel?: string
+  operationalStatus?: string
+  routeKeyword?: string
+  typeCategoryId?: number
   page: number
   size: number
 }) {
-  return unwrap<PageResponse<SpeciesView>>(http.get('/v1/species', { params }))
+  return unwrap<PageResponse<VesselProfileView>>(http.get('/v1/vessel-profiles', { params }))
 }
 
-export function fetchSpeciesDetail(id: number) {
-  return unwrap<SpeciesDetailView>(http.get(`/v1/species/${id}`))
+export function fetchVesselProfileDetail(id: number) {
+  return unwrap<VesselProfileDetailView>(http.get(`/v1/vessel-profiles/${id}`))
 }
 
-export function fetchSpeciesVersions(id: number) {
-  return unwrap<EntityVersionView[]>(http.get(`/v1/species/${id}/versions`))
+export function fetchVesselProfileVersions(id: number) {
+  return unwrap<EntityVersionView[]>(http.get(`/v1/vessel-profiles/${id}/versions`))
 }
 
-export function fetchTaxa() {
-  return unwrap<TaxonOption[]>(http.get('/v1/species/taxa'))
+export function fetchVesselTypeCategories() {
+  return unwrap<VesselTypeCategoryOption[]>(http.get('/v1/vessel-profiles/taxa'))
 }
 
-export function createSpecies(payload: Record<string, unknown>) {
-  return unwrap<SpeciesDetailView>(http.post('/v1/species', payload))
+export function createVesselProfile(payload: Record<string, unknown>) {
+  return unwrap<VesselProfileDetailView>(http.post('/v1/vessel-profiles', payload))
 }
 
-export function updateSpecies(id: number, payload: Record<string, unknown>) {
-  return unwrap<SpeciesDetailView>(http.put(`/v1/species/${id}`, payload))
+export function updateVesselProfile(id: number, payload: Record<string, unknown>) {
+  return unwrap<VesselProfileDetailView>(http.put(`/v1/vessel-profiles/${id}`, payload))
 }
 
-export function rollbackSpeciesVersion(id: number, versionId: number) {
-  return unwrap<SpeciesDetailView>(http.post(`/v1/species/${id}/versions/${versionId}/rollback`))
+export function rollbackVesselProfileVersion(id: number, versionId: number) {
+  return unwrap<VesselProfileDetailView>(http.post(`/v1/vessel-profiles/${id}/versions/${versionId}/rollback`))
 }
 
-export function deleteSpecies(id: number) {
-  return unwrap<void>(http.delete(`/v1/species/${id}`))
+export function deleteVesselProfile(id: number) {
+  return unwrap<void>(http.delete(`/v1/vessel-profiles/${id}`))
 }
 
-export async function uploadSpeciesImage(id: number, file: File) {
+export async function uploadVesselProfileImage(id: number, file: File) {
   const formData = new FormData()
   formData.append('file', file)
-  return unwrap<SpeciesImageView>(
-    http.post(`/v1/species/${id}/images`, formData, {
+  return unwrap<VesselProfileImageView>(
+    http.post(`/v1/vessel-profiles/${id}/images`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

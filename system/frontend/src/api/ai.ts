@@ -6,22 +6,22 @@ import type {
   AiAssistantMessage,
   AiAssistantStreamEvent,
   AiIdentifyImageResponse,
-  AiObservationAnalysisResponse,
-  AiObservationQualityResponse,
-  AiObservationSpeciesItem,
+  AiRecordAnalysisResponse,
+  AiRecordQualityResponse,
+  AiRecordVesselItem,
   AiPolishTextResponse,
-  AiSpeciesAutocompleteResponse,
-  AiTranslateSpeciesResponse,
-  ObservationEnvironment,
+  AiVesselAutocompleteResponse,
+  AiTranslateVesselResponse,
+  AisRecordEnvironment,
 } from '@/types/gsmv'
 
 const AI_REQUEST_TIMEOUT = 90000
 
-export async function identifySpeciesByImage(file: File) {
+export async function identifyVesselByImage(file: File) {
   const formData = new FormData()
   formData.append('file', file)
   return unwrap<AiIdentifyImageResponse>(
-    http.post('/v1/ai/species/identify', formData, {
+    http.post('/v1/ai/vessels/identify', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -30,7 +30,7 @@ export async function identifySpeciesByImage(file: File) {
   )
 }
 
-export function autocompleteSpeciesProfile(payload: {
+export function autocompleteVesselProfile(payload: {
   chineseName?: string
   scientificName?: string
   description?: string
@@ -40,19 +40,19 @@ export function autocompleteSpeciesProfile(payload: {
   distribution?: string
   geoRangeText?: string
 }) {
-  return unwrap<AiSpeciesAutocompleteResponse>(
-    http.post('/v1/ai/species/autocomplete', payload, { timeout: AI_REQUEST_TIMEOUT }),
+  return unwrap<AiVesselAutocompleteResponse>(
+    http.post('/v1/ai/vessels/autocomplete', payload, { timeout: AI_REQUEST_TIMEOUT }),
   )
 }
 
-export function polishSpeciesText(payload: {
+export function polishVesselText(payload: {
   fieldName: string
   text: string
 }) {
-  return unwrap<AiPolishTextResponse>(http.post('/v1/ai/species/polish', payload, { timeout: AI_REQUEST_TIMEOUT }))
+  return unwrap<AiPolishTextResponse>(http.post('/v1/ai/vessels/polish', payload, { timeout: AI_REQUEST_TIMEOUT }))
 }
 
-export function translateSpeciesProfile(payload: {
+export function translateVesselProfile(payload: {
   chineseName?: string
   scientificName?: string
   description?: string
@@ -63,30 +63,30 @@ export function translateSpeciesProfile(payload: {
   geoRangeText?: string
   targetLanguage: string
 }) {
-  return unwrap<AiTranslateSpeciesResponse>(
-    http.post('/v1/ai/species/translate', payload, { timeout: AI_REQUEST_TIMEOUT }),
+  return unwrap<AiTranslateVesselResponse>(
+    http.post('/v1/ai/vessels/translate', payload, { timeout: AI_REQUEST_TIMEOUT }),
   )
 }
 
-export function analyzeObservationWithAi(payload: {
-  ecosystemId?: number
-  ecosystemName: string
+export function analyzeRecordWithAi(payload: {
+  shippingZoneId?: number
+  shippingZoneName: string
   observedAt: string
   locationLat: number
   locationLng: number
   locationName?: string
   note?: string
-  environment: ObservationEnvironment
-  speciesItems: AiObservationSpeciesItem[]
+  environment: AisRecordEnvironment
+  vesselItems: AiRecordVesselItem[]
 }) {
-  return unwrap<AiObservationAnalysisResponse>(
-    http.post('/v1/ai/observations/analyze', payload, { timeout: AI_REQUEST_TIMEOUT }),
+  return unwrap<AiRecordAnalysisResponse>(
+    http.post('/v1/ai/records/analyze', payload, { timeout: AI_REQUEST_TIMEOUT }),
   )
 }
 
-export function qualityCheckObservationWithAi(id: number) {
-  return unwrap<AiObservationQualityResponse>(
-    http.post(`/v1/ai/observations/${id}/quality-check`, undefined, { timeout: AI_REQUEST_TIMEOUT }),
+export function qualityCheckRecordWithAi(id: number) {
+  return unwrap<AiRecordQualityResponse>(
+    http.post(`/v1/ai/records/${id}/quality-check`, undefined, { timeout: AI_REQUEST_TIMEOUT }),
   )
 }
 

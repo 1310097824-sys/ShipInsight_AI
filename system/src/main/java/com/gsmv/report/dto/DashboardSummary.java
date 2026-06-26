@@ -1,10 +1,10 @@
 package com.gsmv.report.dto;
 
 public record DashboardSummary(
-        long totalSpecies,
-        long totalObservations,
-        long totalEcosystems,
+        long totalVesselProfiles,
+        long totalAisRecords,
+        long totalShippingZones,
         long totalUsers,
-        long recentObservationCount
+        long recentAisRecordCount
 ) {
 }

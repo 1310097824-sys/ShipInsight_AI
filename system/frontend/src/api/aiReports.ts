@@ -3,7 +3,14 @@ import type { AiReportDetailView, AiReportView, PageResponse } from '@/types/gsm
 
 const AI_REPORT_TIMEOUT = 90000
 
-export function generateAiReport(payload: { reportType: string; days: number }) {
+export interface GenerateAiReportPayload {
+  reportType: string
+  days: number
+  observedFrom?: string
+  observedTo?: string
+}
+
+export function generateAiReport(payload: GenerateAiReportPayload) {
   return unwrap<AiReportDetailView>(
     http.post('/v1/ai/reports/generate', payload, { timeout: AI_REPORT_TIMEOUT }),
   )

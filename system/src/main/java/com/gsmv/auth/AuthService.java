@@ -33,6 +33,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuditService auditService;
+    private final CaptchaService captchaService;
 
     public AuthService(
             UserMapper userMapper,
@@ -40,7 +41,8 @@ public class AuthService {
             PermissionMapper permissionMapper,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            AuditService auditService
+            AuditService auditService,
+            CaptchaService captchaService
     ) {
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
@@ -48,17 +50,22 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.auditService = auditService;
+        this.captchaService = captchaService;
     }
 
     @Transactional
     public void register(RegisterRequest request) {
+        if (!captchaService.verify(request.captchaId(), request.captchaCode())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码错误或已过期，请重新输入", HttpStatus.BAD_REQUEST);
+        }
+
         if (userMapper.findByUsername(request.username()) != null) {
             throw new BusinessException(ErrorCode.CONFLICT, "用户名已存在", HttpStatus.CONFLICT);
         }
 
         String requestedRoleCode = request.roleCode().trim().toUpperCase(Locale.ROOT);
-        if (!List.of("STUDENT", "PUBLIC").contains(requestedRoleCode)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持学生或公众角色申请注册", HttpStatus.BAD_REQUEST);
+        if (!List.of("OPERATOR", "OBSERVER").contains(requestedRoleCode)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持船舶运营方或公众观察员角色申请注册", HttpStatus.BAD_REQUEST);
         }
 
         SysRole role = roleMapper.findByCode(requestedRoleCode);

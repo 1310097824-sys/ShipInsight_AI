@@ -2,13 +2,13 @@ import { http, unwrap } from '@/api/http'
 import type { AiIdentifyImageResponse, AiReviewTicketDetailView, AiReviewTicketView, PageResponse } from '@/types/gsmv'
 
 export async function createAiReviewTicket(payload: {
-  likelyChineseName?: string
-  likelyScientificName?: string
+  likelyDisplayName?: string
+  likelyProfileName?: string
   confidence: number
   needsHumanReview: boolean
   reasoning?: string
   candidates: AiIdentifyImageResponse['candidates']
-  relatedSpeciesRecords: AiIdentifyImageResponse['relatedSpeciesRecords']
+  relatedVesselRecords: AiIdentifyImageResponse['relatedVesselRecords']
   ragEvidence?: AiIdentifyImageResponse['ragEvidence']
   ragConclusion?: string
   conflictWarnings?: string[]
@@ -50,7 +50,7 @@ export function startAiReviewTicket(id: number) {
 
 export function resolveAiReviewTicket(id: number, payload: {
   resolutionCode: string
-  finalSpeciesId?: number
+  finalVesselId?: number
   finalChineseName?: string
   finalScientificName?: string
   reviewNote: string
@@ -66,8 +66,8 @@ export function resubmitAiReviewTicket(id: number, payload: { submitNote?: strin
   return unwrap<AiReviewTicketDetailView>(http.post(`/v1/ai/review-tickets/${id}/resubmit`, payload))
 }
 
-export function linkAiReviewTicketSpecies(id: number, payload: { finalSpeciesId: number; reviewNote: string }) {
-  return unwrap<AiReviewTicketDetailView>(http.post(`/v1/ai/review-tickets/${id}/link-species`, payload))
+export function linkAiReviewTicketVessel(id: number, payload: { finalVesselId: number; reviewNote: string }) {
+  return unwrap<AiReviewTicketDetailView>(http.post(`/v1/ai/review-tickets/${id}/link-vessel`, payload))
 }
 
 export async function fetchAiReviewImageBlob(mediaId: number) {

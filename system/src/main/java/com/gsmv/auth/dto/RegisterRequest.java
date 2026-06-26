@@ -8,6 +8,8 @@ public record RegisterRequest(
         @NotBlank(message = "显示名称不能为空") String displayName,
         String email,
         String phone,
-        @NotBlank(message = "申请角色不能为空") String roleCode
+        @NotBlank(message = "申请角色不能为空") String roleCode,
+        @NotBlank(message = "验证码标识不能为空") String captchaId,
+        @NotBlank(message = "验证码不能为空") String captchaCode
 ) {
 }

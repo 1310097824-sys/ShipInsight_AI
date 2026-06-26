@@ -1,5 +1,7 @@
 package com.gsmv.vessel;
 
+import com.gsmv.ais.dto.AisRecordView;
+import com.gsmv.ais.dto.AisVesselSummaryView;
 import com.gsmv.common.ApiResponse;
 import com.gsmv.common.PageResponse;
 import com.gsmv.media.MediaFileService;
@@ -69,6 +71,22 @@ public class VesselController {
     @PreAuthorize("hasAuthority('VESSEL_READ') or hasRole('ADMIN')")
     public ApiResponse<VesselDetailView> getVessel(@PathVariable Long id) {
         return ApiResponse.success(vesselService.getVessel(id));
+    }
+
+    @GetMapping("/{id}/ais-summary")
+    @PreAuthorize("hasAuthority('VESSEL_READ') or hasRole('ADMIN')")
+    public ApiResponse<AisVesselSummaryView> getAisSummary(@PathVariable Long id) {
+        return ApiResponse.success(vesselService.getAisSummary(id));
+    }
+
+    @GetMapping("/{id}/ais-records")
+    @PreAuthorize("hasAuthority('VESSEL_READ') or hasRole('ADMIN')")
+    public ApiResponse<PageResponse<AisRecordView>> listAisRecords(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.success(vesselService.listAisRecords(id, page, size));
     }
 
     @GetMapping("/{id}/versions")

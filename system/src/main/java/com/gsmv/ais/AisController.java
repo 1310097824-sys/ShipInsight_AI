@@ -2,12 +2,19 @@ package com.gsmv.ais;
 
 import com.gsmv.ais.dto.AisBatchDeleteRequest;
 import com.gsmv.ais.dto.AisBatchOperationResult;
+import com.gsmv.ais.dto.AisConvertedCsvSaveResult;
 import com.gsmv.ais.dto.AisBatchUpdateRequest;
+import com.gsmv.ais.dto.AisDatasetDateStat;
 import com.gsmv.ais.dto.AisImportProgress;
 import com.gsmv.ais.dto.AisImportResult;
+import com.gsmv.ais.dto.AisRankingStat;
 import com.gsmv.ais.dto.AisRecordView;
+import com.gsmv.ais.dto.AisRiskSummary;
+import com.gsmv.ais.dto.AisVesselDraftBatchRequest;
+import com.gsmv.ais.dto.AisVesselDraftBatchResult;
 import com.gsmv.common.ApiResponse;
 import com.gsmv.common.PageResponse;
+import com.gsmv.vessel.VesselService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,9 +37,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class AisController {
 
     private final AisService aisService;
+    private final VesselService vesselService;
 
-    public AisController(AisService aisService) {
+    public AisController(AisService aisService, VesselService vesselService) {
         this.aisService = aisService;
+        this.vesselService = vesselService;
     }
 
     @GetMapping
@@ -65,6 +74,37 @@ public class AisController {
         return ApiResponse.success(aisService.datasetDates());
     }
 
+    @GetMapping("/stats/dataset-dates")
+    @PreAuthorize("hasAuthority('OBS_READ')")
+    public ApiResponse<List<AisDatasetDateStat>> datasetDateStats(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime observedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime observedTo
+    ) {
+        return ApiResponse.success(aisService.datasetDateStats(keyword, observedFrom, observedTo));
+    }
+
+    @GetMapping("/stats/importers")
+    @PreAuthorize("hasAuthority('OBS_READ')")
+    public ApiResponse<List<AisRankingStat>> importerStats(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime observedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime observedTo,
+            @RequestParam(defaultValue = "6") int limit
+    ) {
+        return ApiResponse.success(aisService.importerStats(keyword, observedFrom, observedTo, limit));
+    }
+
+    @GetMapping("/stats/risk-summary")
+    @PreAuthorize("hasAuthority('OBS_READ')")
+    public ApiResponse<AisRiskSummary> riskSummary(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime observedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime observedTo
+    ) {
+        return ApiResponse.success(aisService.riskSummary(keyword, observedFrom, observedTo));
+    }
+
     @GetMapping("/{mmsi}/track")
     @PreAuthorize("hasAuthority('OBS_READ')")
     public ApiResponse<PageResponse<AisRecordView>> vesselTrack(
@@ -84,10 +124,24 @@ public class AisController {
         return ApiResponse.success(aisService.importFile(file, limit, taskId));
     }
 
+    @PostMapping(value = "/converted-csv/save", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('OBS_WRITE')")
+    public ApiResponse<AisConvertedCsvSaveResult> saveConvertedCsv(
+            @RequestParam("file") MultipartFile file
+    ) {
+        return ApiResponse.success(aisService.saveConvertedCsv(file));
+    }
+
     @GetMapping("/import/progress/{taskId}")
     @PreAuthorize("hasAuthority('OBS_WRITE')")
     public ApiResponse<AisImportProgress> importProgress(@PathVariable String taskId) {
         return ApiResponse.success(aisService.importProgress(taskId));
+    }
+
+    @PostMapping("/vessel-drafts")
+    @PreAuthorize("hasAuthority('VESSEL_WRITE') or hasRole('ADMIN')")
+    public ApiResponse<AisVesselDraftBatchResult> generateVesselDrafts(@RequestBody(required = false) AisVesselDraftBatchRequest request) {
+        return ApiResponse.success(vesselService.generateVesselDraftsFromAis(request));
     }
 
     @DeleteMapping("/batch")

@@ -18,8 +18,8 @@ import com.gsmv.media.MediaFileService;
 import com.gsmv.media.model.MediaFile;
 import com.gsmv.security.CurrentUser;
 import com.gsmv.security.SecurityUtils;
-import com.gsmv.species.SpeciesService;
-import com.gsmv.species.dto.SpeciesDetailView;
+import com.gsmv.vessel.VesselService;
+import com.gsmv.vessel.dto.VesselDetailView;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -42,7 +42,7 @@ public class AiReviewTicketService {
 
     private final AiReviewTicketMapper ticketMapper;
     private final MediaFileService mediaFileService;
-    private final SpeciesService speciesService;
+    private final VesselService vesselService;
     private final RagKnowledgeService ragKnowledgeService;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
@@ -50,14 +50,14 @@ public class AiReviewTicketService {
     public AiReviewTicketService(
             AiReviewTicketMapper ticketMapper,
             MediaFileService mediaFileService,
-            SpeciesService speciesService,
+            VesselService vesselService,
             RagKnowledgeService ragKnowledgeService,
             AuditService auditService,
             ObjectMapper objectMapper
     ) {
         this.ticketMapper = ticketMapper;
         this.mediaFileService = mediaFileService;
-        this.speciesService = speciesService;
+        this.vesselService = vesselService;
         this.ragKnowledgeService = ragKnowledgeService;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
@@ -90,7 +90,7 @@ public class AiReviewTicketService {
 
         MediaFile image = mediaFileService.store(AI_REVIEW_IMAGE_BUSINESS_TYPE, ticket.getId(), file, currentUser.userId());
         ticketMapper.updateImageMediaId(ticket.getId(), image.getId());
-        ragKnowledgeService.syncAiReviewTicket(ticket.getId());
+        ragKnowledgeService.markSourceDeleted(RagKnowledgeService.SOURCE_AI_REVIEW, ticket.getId());
 
         auditService.record(
                 currentUser.userId(),
@@ -169,19 +169,19 @@ public class AiReviewTicketService {
         String finalChineseName = normalizeNullable(request.finalChineseName());
         String finalScientificName = normalizeNullable(request.finalScientificName());
         if (finalSpeciesId != null) {
-            SpeciesDetailView species = speciesService.getSpecies(finalSpeciesId);
-            if (!Integer.valueOf(1).equals(species.status())) {
+            VesselDetailView vessel = vesselService.getVessel(finalSpeciesId);
+            if (!Integer.valueOf(1).equals(vessel.status())) {
                 throw new BusinessException(
                         ErrorCode.BAD_REQUEST,
-                        "归档物种不能作为复核结论关联物种，请先启用该物种或选择其他可用物种",
+                        "归档船舶不能作为复核结论关联船舶，请先启用该船舶或选择其他可用船舶",
                         HttpStatus.BAD_REQUEST
                 );
             }
-            finalChineseName = firstNonBlank(species.chineseName(), finalChineseName);
-            finalScientificName = firstNonBlank(species.scientificName(), finalScientificName);
+            finalChineseName = firstNonBlank(vessel.vesselName(), finalChineseName);
+            finalScientificName = firstNonBlank(vessel.mmsi(), finalScientificName);
         }
         if ("CONFIRMED".equals(resolutionCode) && !StringUtils.hasText(finalChineseName) && !StringUtils.hasText(finalScientificName)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "确认物种时请至少填写最终物种名称或选择已有物种档案", HttpStatus.BAD_REQUEST);
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "确认船舶时请至少填写最终船舶名称或选择已有船舶档案", HttpStatus.BAD_REQUEST);
         }
 
         ticketMapper.resolve(
@@ -245,19 +245,19 @@ public class AiReviewTicketService {
     }
 
     @Transactional
-    public AiReviewTicketDtos.ReviewTicketDetailView linkSpecies(
+    public AiReviewTicketDtos.ReviewTicketDetailView linkVessel(
             Long id,
             AiReviewTicketDtos.LinkSpeciesRequest request
     ) {
         if (request.finalSpeciesId() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要关联的已有物种档案", HttpStatus.BAD_REQUEST);
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要关联的已有船舶档案", HttpStatus.BAD_REQUEST);
         }
-        SpeciesDetailView species = speciesService.getSpecies(request.finalSpeciesId());
+        VesselDetailView vessel = vesselService.getVessel(request.finalSpeciesId());
         return resolveTicket(id, new AiReviewTicketDtos.ResolveReviewTicketRequest(
                 "CONFIRMED",
                 request.finalSpeciesId(),
-                species.chineseName(),
-                species.scientificName(),
+                vessel.vesselName(),
+                vessel.mmsi(),
                 request.reviewNote()
         ));
     }

@@ -42,6 +42,18 @@
               <span>导入全部数据</span>
             </el-button>
           </el-upload>
+          <el-upload
+            action="#"
+            accept=".gpx"
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="handleGpxFileSelected"
+          >
+            <el-button class="gpx-convert-button" plain>
+              <el-icon><Upload /></el-icon>
+              <span>GPX转CSV</span>
+            </el-button>
+          </el-upload>
         </div>
       </div>
     </section>
@@ -80,20 +92,31 @@
           <el-tag v-if="selectedRows.length" type="success" effect="dark" round>已选 {{ selectedRows.length }}</el-tag>
           <span v-if="activeFilterText" class="filter-text">{{ activeFilterText }}</span>
         </div>
-        <div v-if="canWrite" class="batch-actions">
-          <el-button :disabled="!selectedRows.length" @click="openBatchEdit('selected')">
+        <div v-if="canWrite || canCreateVessel" class="batch-actions">
+          <el-button
+            v-if="canCreateVessel"
+            type="success"
+            plain
+            :loading="bulkDraftGenerating"
+            :disabled="!pagination.total"
+            @click="confirmGenerateVesselDrafts"
+          >
+            <el-icon><Plus /></el-icon>
+            <span>一键生成未建档船舶</span>
+          </el-button>
+          <el-button v-if="canWrite" :disabled="!selectedRows.length" @click="openBatchEdit('selected')">
             <el-icon><Edit /></el-icon>
             <span>修改选中</span>
           </el-button>
-          <el-button :disabled="!pagination.total" @click="openBatchEdit('matched')">
+          <el-button v-if="canWrite" :disabled="!pagination.total" @click="openBatchEdit('matched')">
             <el-icon><Operation /></el-icon>
             <span>修改查询结果</span>
           </el-button>
-          <el-button type="danger" plain :disabled="!selectedRows.length" @click="confirmDelete('selected')">
+          <el-button v-if="canWrite" type="danger" plain :disabled="!selectedRows.length" @click="confirmDelete('selected')">
             <el-icon><Delete /></el-icon>
             <span>删除选中</span>
           </el-button>
-          <el-button type="danger" plain :disabled="!pagination.total" @click="confirmDelete('matched')">
+          <el-button v-if="canWrite" type="danger" plain :disabled="!pagination.total" @click="confirmDelete('matched')">
             <el-icon><RemoveFilled /></el-icon>
             <span>删除查询结果</span>
           </el-button>
@@ -159,6 +182,21 @@
           <el-table-column label="航行参数" min-width="260" show-overflow-tooltip>
             <template #default="{ row }">
               {{ navigationSummary(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="关联档案" min-width="180">
+            <template #default="{ row }">
+              <div class="linked-vessel-cell">
+                <template v-if="row.linkedVessel">
+                  <el-button link type="primary" @click.stop="openLinkedVessel(row)">
+                    {{ row.linkedVessel.vesselName }}
+                  </el-button>
+                  <el-tag size="small" :type="row.linkedVessel.status === 1 ? 'success' : 'info'" effect="plain">
+                    {{ row.linkedVessel.status === 1 ? '启用' : '已归档' }}
+                  </el-tag>
+                </template>
+                <el-tag v-else size="small" type="warning" effect="plain">未建档</el-tag>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="备注" min-width="160" show-overflow-tooltip>
@@ -259,6 +297,50 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="vesselDraftVisible" title="生成船舶档案草稿" width="760px" destroy-on-close>
+      <el-form label-position="top" class="vessel-draft-form">
+        <div class="draft-grid">
+          <el-form-item label="船名">
+            <el-input v-model="vesselDraftForm.vesselName" maxlength="128" />
+          </el-form-item>
+          <el-form-item label="MMSI">
+            <el-input v-model="vesselDraftForm.mmsi" maxlength="32" />
+          </el-form-item>
+          <el-form-item label="IMO">
+            <el-input v-model="vesselDraftForm.imo" maxlength="32" />
+          </el-form-item>
+          <el-form-item label="呼号">
+            <el-input v-model="vesselDraftForm.callSign" maxlength="32" />
+          </el-form-item>
+          <el-form-item label="船长 m">
+            <el-input-number v-model="vesselDraftForm.lengthM" :min="0" :precision="2" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="船宽 m">
+            <el-input-number v-model="vesselDraftForm.widthM" :min="0" :precision="2" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="吃水 m">
+            <el-input-number v-model="vesselDraftForm.draftM" :min="0" :precision="2" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="档案状态">
+            <el-select v-model="vesselDraftForm.status">
+              <el-option label="启用" :value="1" />
+              <el-option label="归档" :value="0" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-form-item label="资料来源">
+          <el-input v-model="vesselDraftForm.sourceText" type="textarea" :rows="3" maxlength="1000" show-word-limit />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="vesselDraftForm.note" type="textarea" :rows="3" maxlength="1000" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="vesselDraftVisible = false">取消</el-button>
+        <el-button type="primary" :loading="vesselDraftSubmitting" @click="submitVesselDraft">创建船舶档案</el-button>
+      </template>
+    </el-dialog>
+
     <el-drawer v-model="detailVisible" size="680px" title="AIS 详情">
       <template v-if="detail">
         <el-descriptions :column="1" border>
@@ -274,6 +356,30 @@
           <el-descriptions-item label="导入时间">{{ formatDateTime(detail.importedAt) }}</el-descriptions-item>
         </el-descriptions>
 
+        <div class="linked-vessel-panel">
+          <div class="linked-vessel-panel__header">
+            <strong>关联船舶档案</strong>
+            <el-tag v-if="detail.linkedVessel" :type="detail.linkedVessel.status === 1 ? 'success' : 'info'" effect="plain">
+              {{ detail.linkedVessel.status === 1 ? '启用' : '已归档' }}
+            </el-tag>
+            <el-tag v-else type="warning" effect="plain">未建档</el-tag>
+          </div>
+          <template v-if="detail.linkedVessel">
+            <p>{{ detail.linkedVessel.vesselName }} · {{ detail.linkedVessel.matchMethod }} 匹配</p>
+            <el-button type="primary" plain @click="openLinkedVessel(detail)">
+              <el-icon><View /></el-icon>
+              打开船舶档案
+            </el-button>
+          </template>
+          <template v-else>
+            <p>未找到 MMSI/IMO 精确匹配的船舶主档，可用当前 AIS 字段生成待确认草稿。</p>
+            <el-button v-if="canCreateVessel" type="primary" plain @click="openVesselDraft(detail)">
+              <el-icon><Plus /></el-icon>
+              生成档案草稿
+            </el-button>
+          </template>
+        </div>
+
         <el-divider>航行参数</el-divider>
 
         <div class="ais-metric-grid">
@@ -284,15 +390,52 @@
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="gpxConvertVisible" title="GPX 转 AIS CSV" width="560px" destroy-on-close>
+      <el-form label-position="top" class="gpx-convert-form">
+        <el-alert
+          :title="selectedGpxFile ? `已选择文件：${selectedGpxFile.name}` : '请先选择 GPX 文件'"
+          type="info"
+          show-icon
+          :closable="false"
+        />
+        <div class="gpx-convert-grid">
+          <el-form-item label="MMSI">
+            <el-input v-model="gpxConvertForm.mmsi" maxlength="32" placeholder="例如 413000001" />
+          </el-form-item>
+          <el-form-item label="船名">
+            <el-input v-model="gpxConvertForm.vesselName" maxlength="128" placeholder="例如 MI15-TEST" />
+          </el-form-item>
+          <el-form-item label="IMO">
+            <el-input v-model="gpxConvertForm.imo" maxlength="32" placeholder="可留空" />
+          </el-form-item>
+          <el-form-item label="呼号">
+            <el-input v-model="gpxConvertForm.callSign" maxlength="32" placeholder="可留空" />
+          </el-form-item>
+        </div>
+        <el-form-item label="AIS 类别">
+          <el-input v-model="gpxConvertForm.transceiver" maxlength="64" placeholder="默认 GPSLogger-Mobile" />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="gpxConvertForm.includeNonGps">包含 network 等非 GPS 轨迹点</el-checkbox>
+        </el-form-item>
+        <p class="gpx-convert-tip">转换后会直接保存到项目根目录的 handle_DATA_clean 文件夹，不再额外下载到浏览器默认目录。</p>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeGpxConvertDialog">取消</el-button>
+        <el-button type="primary" :loading="gpxConverting" @click="submitGpxConversion">转换并保存 CSV</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   Delete,
   Edit,
   Operation,
+  Plus,
   RefreshRight,
   RemoveFilled,
   Search,
@@ -301,15 +444,21 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import {
   deleteAisRecords,
   fetchAisImportProgress,
   fetchAisRecords,
+  generateAisVesselDrafts,
   importAisRecords,
+  saveConvertedAisCsv,
   updateAisRecords,
 } from '@/api/aisRecords'
+import { createVessel } from '@/api/vessels'
 import { useAuthStore } from '@/stores/auth'
-import type { AisBatchOperationPayload, AisImportProgress, AisRecordView } from '@/types/gsmv'
+import { notifyDataChanged } from '@/utils/dataSync'
+import { convertGpxFileToAisCsv } from '@/utils/gpxToAisCsv'
+import type { AisBatchOperationPayload, AisImportProgress, AisRecordView, VesselSavePayload } from '@/types/gsmv'
 import type { AisImportResult } from '@/types/gsmv'
 
 type EditScope = 'selected' | 'matched'
@@ -328,10 +477,19 @@ type EditableKey =
   | 'draft'
 
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const importingMode = ref<ImportMode | ''>('')
 const batchOperating = ref(false)
+const bulkDraftGenerating = ref(false)
+const gpxConvertVisible = ref(false)
+const gpxConverting = ref(false)
+const vesselDraftVisible = ref(false)
+const vesselDraftSubmitting = ref(false)
+const selectedGpxFile = ref<File | null>(null)
+const vesselDraftSourceRecord = ref<AisRecordView | null>(null)
 const rows = ref<AisRecordView[]>([])
 const selectedRows = ref<AisRecordView[]>([])
 const detail = ref<AisRecordView | null>(null)
@@ -374,7 +532,30 @@ const editForm = reactive({
   },
 })
 
+const vesselDraftForm = reactive<VesselSavePayload>({
+  vesselName: '',
+  mmsi: '',
+  imo: '',
+  callSign: '',
+  lengthM: null,
+  widthM: null,
+  draftM: null,
+  sourceText: '',
+  note: '',
+  status: 1,
+})
+
+const gpxConvertForm = reactive({
+  mmsi: '413000001',
+  vesselName: '',
+  imo: '',
+  callSign: '',
+  transceiver: 'GPSLogger-Mobile',
+  includeNonGps: false,
+})
+
 const canWrite = computed(() => authStore.authorities.includes('OBS_WRITE'))
+const canCreateVessel = computed(() => authStore.authorities.includes('VESSEL_WRITE') || authStore.profile?.roles.includes('ADMIN'))
 const editDialogTitle = computed(() => (editScope.value === 'matched' ? '批量修改查询结果' : '批量修改选中记录'))
 const activeFilterText = computed(() => {
   const parts: string[] = []
@@ -494,6 +675,19 @@ function handleAllFileSelected(uploadFile: UploadFile) {
   void handleFileSelected(uploadFile, 'all')
 }
 
+function handleGpxFileSelected(uploadFile: UploadFile) {
+  if (!uploadFile.raw) {
+    return
+  }
+  selectedGpxFile.value = uploadFile.raw
+  gpxConvertForm.vesselName = stripFileExtension(uploadFile.name) || 'MI15-TEST'
+  gpxConvertForm.imo = ''
+  gpxConvertForm.callSign = ''
+  gpxConvertForm.transceiver = 'GPSLogger-Mobile'
+  gpxConvertForm.includeNonGps = false
+  gpxConvertVisible.value = true
+}
+
 async function handleFileSelected(uploadFile: UploadFile, mode: ImportMode) {
   if (!uploadFile.raw) {
     return
@@ -537,6 +731,46 @@ async function handleFileSelected(uploadFile: UploadFile, mode: ImportMode) {
   }
 }
 
+function closeGpxConvertDialog() {
+  gpxConvertVisible.value = false
+  selectedGpxFile.value = null
+}
+
+async function submitGpxConversion() {
+  if (!selectedGpxFile.value) {
+    ElMessage.warning('请先选择 GPX 文件')
+    return
+  }
+  if (!gpxConvertForm.mmsi.trim()) {
+    ElMessage.warning('请填写 MMSI')
+    return
+  }
+  if (!gpxConvertForm.vesselName.trim()) {
+    ElMessage.warning('请填写船名')
+    return
+  }
+
+  gpxConverting.value = true
+  try {
+    const result = await convertGpxFileToAisCsv(selectedGpxFile.value, {
+      mmsi: gpxConvertForm.mmsi,
+      vesselName: gpxConvertForm.vesselName,
+      imo: gpxConvertForm.imo,
+      callSign: gpxConvertForm.callSign,
+      transceiver: gpxConvertForm.transceiver,
+      includeNonGps: gpxConvertForm.includeNonGps,
+    })
+    const csvFile = new File([result.blob], result.fileName, { type: 'text/csv;charset=utf-8' })
+    const saved = await saveConvertedAisCsv(csvFile)
+    ElMessage.success(`已生成 ${result.rowCount} 条 AIS 记录，并已保存到 ${saved.savedPath}`)
+    closeGpxConvertDialog()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : 'GPX 转换失败')
+  } finally {
+    gpxConverting.value = false
+  }
+}
+
 function createImportTaskId() {
   const random = Math.random().toString(36).slice(2, 10)
   return `ais-import-${Date.now()}-${random}`
@@ -573,6 +807,110 @@ async function refreshImportProgress(taskId: string, finalRefresh = false) {
 function showDetail(row: AisRecordView) {
   detail.value = row
   detailVisible.value = true
+}
+
+function openLinkedVessel(row: AisRecordView) {
+  const vesselId = row.linkedVessel?.vesselId
+  if (!vesselId) {
+    return
+  }
+  detailVisible.value = false
+  router.push(`/vessels/${vesselId}`)
+}
+
+function openVesselDraft(record: AisRecordView) {
+  vesselDraftSourceRecord.value = record
+  vesselDraftForm.vesselName = record.vesselName || `MMSI ${record.mmsi}`
+  vesselDraftForm.mmsi = record.mmsi || ''
+  vesselDraftForm.imo = record.imo || ''
+  vesselDraftForm.callSign = record.callSign || ''
+  vesselDraftForm.lengthM = record.length ?? null
+  vesselDraftForm.widthM = record.width ?? null
+  vesselDraftForm.draftM = record.draft ?? null
+  vesselDraftForm.status = 1
+  vesselDraftForm.sourceText = `由 AIS 记录 ${record.id} 生成草稿；来源文件：${record.sourceFile || '未知'}；接收时间：${formatDateTime(record.baseDateTime)}。`
+  vesselDraftForm.note = `该船舶档案由 AIS 记录预填，MMSI/IMO 已用于后续动态关联，保存前需人工核验。`
+  vesselDraftVisible.value = true
+}
+
+async function submitVesselDraft() {
+  if (!vesselDraftForm.vesselName.trim()) {
+    ElMessage.warning('请填写船名')
+    return
+  }
+
+  vesselDraftSubmitting.value = true
+  try {
+    const sourceRecord = vesselDraftSourceRecord.value
+    const created = await createVessel({
+      vesselName: vesselDraftForm.vesselName.trim(),
+      mmsi: cleanText(vesselDraftForm.mmsi || ''),
+      imo: cleanText(vesselDraftForm.imo || ''),
+      callSign: cleanText(vesselDraftForm.callSign || ''),
+      lengthM: vesselDraftForm.lengthM ?? null,
+      widthM: vesselDraftForm.widthM ?? null,
+      draftM: vesselDraftForm.draftM ?? null,
+      sourceText: cleanText(vesselDraftForm.sourceText || ''),
+      note: cleanText(vesselDraftForm.note || ''),
+      status: vesselDraftForm.status,
+    })
+    notifyDataChanged('vessel')
+    vesselDraftVisible.value = false
+    ElMessage.success('船舶档案已创建')
+    if (sourceRecord && detail.value?.id === sourceRecord.id) {
+      detail.value = {
+        ...detail.value,
+        linkedVessel: {
+          vesselId: created.id,
+          vesselName: created.vesselName,
+          mmsi: created.mmsi,
+          imo: created.imo,
+          riskLevel: created.riskLevel,
+          navigationStatus: created.navigationStatus,
+          status: created.status,
+          matchMethod: created.mmsi && sourceRecord.mmsi && created.mmsi === sourceRecord.mmsi ? 'MMSI' : 'IMO',
+        },
+      }
+    }
+    await loadData()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '船舶档案创建失败')
+  } finally {
+    vesselDraftSubmitting.value = false
+  }
+}
+
+async function confirmGenerateVesselDrafts() {
+  const [observedFrom, observedTo] = query.observedRange
+  const filterLabel = activeFilterText.value || '全部 AIS 记录'
+  try {
+    await ElMessageBox.confirm(
+      `将按当前查询条件（${filterLabel}）全量扫描不同 MMSI/IMO，并为未建档船舶生成档案草稿。已存在 MMSI/IMO 的船舶会自动跳过，数据量较大时可能需要等待更久。`,
+      '一键生成未建档船舶',
+      {
+        confirmButtonText: '开始生成',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    bulkDraftGenerating.value = true
+    const result = await generateAisVesselDrafts({
+      keyword: query.keyword.trim() || undefined,
+      observedFrom: observedFrom || undefined,
+      observedTo: observedTo || undefined,
+    })
+    notifyDataChanged('vessel')
+    ElMessage.success(
+      `已生成 ${result.created} 个船舶档案，跳过已建档 ${result.skippedExisting} 个，无有效身份 ${result.skippedInvalid} 个`,
+    )
+    await loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '批量生成船舶档案失败')
+    }
+  } finally {
+    bulkDraftGenerating.value = false
+  }
 }
 
 function openRowEdit(row: AisRecordView) {
@@ -680,6 +1018,11 @@ function buildUpdateFields() {
   return fields
 }
 
+function cleanText(value: string) {
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
 function resetEditForm() {
   editableFields.forEach(({ key }) => {
     editForm.enabled[key] = false
@@ -747,7 +1090,31 @@ function nullableText(value: number | string | null | undefined) {
   return value == null || value === '' ? '-' : String(value)
 }
 
+function stripFileExtension(name: string) {
+  return name.replace(/\.[^.]+$/, '')
+}
+
+function applyRouteKeyword() {
+  const routeKeyword = typeof route.query.keyword === 'string' ? route.query.keyword.trim() : ''
+  if (!routeKeyword || query.keyword === routeKeyword) {
+    return false
+  }
+  query.keyword = routeKeyword
+  pagination.page = 1
+  return true
+}
+
+watch(
+  () => route.query.keyword,
+  () => {
+    if (applyRouteKeyword()) {
+      void loadData()
+    }
+  },
+)
+
 onMounted(() => {
+  applyRouteKeyword()
   void loadData()
 })
 
@@ -804,6 +1171,15 @@ onBeforeUnmount(() => {
   --el-button-hover-text-color: #ffffff;
 }
 
+.gpx-convert-button {
+  --el-button-bg-color: rgba(0, 229, 255, 0.1);
+  --el-button-border-color: rgba(94, 214, 255, 0.44);
+  --el-button-text-color: #c9f6ff;
+  --el-button-hover-bg-color: rgba(0, 229, 255, 0.18);
+  --el-button-hover-border-color: rgba(130, 231, 255, 0.68);
+  --el-button-hover-text-color: #ffffff;
+}
+
 .query-toolbar {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) minmax(340px, 1.4fr) auto auto;
@@ -844,7 +1220,7 @@ onBeforeUnmount(() => {
 }
 
 .ais-table-wrap :deep(.el-table) {
-  min-width: 1434px;
+  min-width: 1614px;
 }
 
 .row-actions {
@@ -856,6 +1232,67 @@ onBeforeUnmount(() => {
 
 .row-actions :deep(.el-button) {
   margin-left: 0;
+}
+
+.linked-vessel-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.linked-vessel-cell :deep(.el-button) {
+  margin-left: 0;
+  min-width: 0;
+  max-width: 128px;
+}
+
+.linked-vessel-cell :deep(.el-button span) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linked-vessel-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(157, 233, 255, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.08), rgba(124, 60, 255, 0.06)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.linked-vessel-panel__header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.linked-vessel-panel p {
+  margin: 0;
+  color: rgba(222, 246, 255, 0.82);
+  line-height: 1.7;
+}
+
+.vessel-draft-form {
+  display: grid;
+  gap: 14px;
+}
+
+.draft-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 14px;
+}
+
+.draft-grid :deep(.el-input-number),
+.draft-grid :deep(.el-select) {
+  width: 100%;
 }
 
 .filter-text {
@@ -954,6 +1391,23 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.gpx-convert-form {
+  display: grid;
+  gap: 14px;
+}
+
+.gpx-convert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 14px;
+}
+
+.gpx-convert-tip {
+  margin: 0;
+  color: rgba(222, 246, 255, 0.74);
+  line-height: 1.7;
+}
+
 .ais-metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -992,13 +1446,18 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
+  .gpx-convert-grid {
+    grid-template-columns: 1fr;
+  }
+
   .result-toolbar {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .field-grid,
-  .number-grid {
+  .number-grid,
+  .draft-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1006,6 +1465,7 @@ onBeforeUnmount(() => {
 @media (max-width: 720px) {
   .field-grid,
   .number-grid,
+  .draft-grid,
   .ais-metric-grid {
     grid-template-columns: 1fr;
   }

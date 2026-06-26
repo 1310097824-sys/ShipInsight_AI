@@ -7,15 +7,22 @@ import com.github.luben.zstd.ZstdInputStream;
 import com.gsmv.ais.dto.AisBatchDeleteRequest;
 import com.gsmv.ais.dto.AisBatchOperationResult;
 import com.gsmv.ais.dto.AisBatchUpdateRequest;
+import com.gsmv.ais.dto.AisConvertedCsvSaveResult;
+import com.gsmv.ais.dto.AisDatasetDateStat;
 import com.gsmv.ais.dto.AisImportProgress;
 import com.gsmv.ais.dto.AisImportResult;
+import com.gsmv.ais.dto.AisRankingStat;
 import com.gsmv.ais.dto.AisRecordView;
+import com.gsmv.ais.dto.AisRiskSummary;
+import com.gsmv.ais.dto.AisVesselDraftCandidate;
+import com.gsmv.ais.dto.AisVesselSummaryView;
 import com.gsmv.common.ErrorCode;
 import com.gsmv.common.PageResponse;
 import com.gsmv.common.exception.BusinessException;
 import com.gsmv.security.CurrentUser;
 import com.gsmv.security.SecurityUtils;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,6 +34,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -84,13 +93,15 @@ public class AisService {
 
     private final AisClickHouseProperties properties;
     private final ObjectMapper objectMapper;
+    private final AisVesselLinkService vesselLinkService;
     private final HttpClient httpClient;
     private final ConcurrentMap<String, ImportProgressState> importProgresses = new ConcurrentHashMap<>();
     private volatile boolean schemaReady;
 
-    public AisService(AisClickHouseProperties properties, ObjectMapper objectMapper) {
+    public AisService(AisClickHouseProperties properties, ObjectMapper objectMapper, AisVesselLinkService vesselLinkService) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.vesselLinkService = vesselLinkService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(properties.getConnectTimeoutMillis()))
                 .build();
@@ -149,7 +160,7 @@ public class AisService {
                 FORMAT JSONEachRow
                 """.formatted(tableName(), where);
 
-        List<AisRecordView> items = parseRecords(postQuery(listSql));
+        List<AisRecordView> items = vesselLinkService.enrich(parseRecords(postQuery(listSql)));
         long total = parseTotal(postQuery(countSql));
         return new PageResponse<>(items, total, safePage, safeSize);
     }
@@ -264,6 +275,79 @@ public class AisService {
         return parseTextFields(postQuery(sql), "datasetDate");
     }
 
+    public List<AisDatasetDateStat> datasetDateStats(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo
+    ) {
+        validateDateRange(observedFrom, observedTo);
+        ensureSchema();
+        String sql = """
+                SELECT
+                  toString(toDate(base_date_time)) AS datasetDate,
+                  count() AS recordCount
+                FROM %s FINAL
+                %s
+                GROUP BY datasetDate
+                ORDER BY datasetDate DESC
+                FORMAT JSONEachRow
+                """.formatted(tableName(), buildWhere(keyword, observedFrom, observedTo));
+        return parseDatasetDateStats(postQuery(sql));
+    }
+
+    public List<AisRankingStat> importerStats(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo,
+            int limit
+    ) {
+        validateDateRange(observedFrom, observedTo);
+        ensureSchema();
+        int safeLimit = Math.min(Math.max(limit, 1), 50);
+        String sql = """
+                SELECT
+                  if(trim(imported_by_name) = '', '未记录录入人', imported_by_name) AS label,
+                  count() AS recordCount
+                FROM %s FINAL
+                %s
+                GROUP BY label
+                ORDER BY recordCount DESC
+                LIMIT %d
+                FORMAT JSONEachRow
+                """.formatted(tableName(), buildWhere(keyword, observedFrom, observedTo), safeLimit);
+        return parseRankingStats(postQuery(sql));
+    }
+
+
+    public AisRiskSummary riskSummary(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo
+    ) {
+        validateDateRange(observedFrom, observedTo);
+        ensureSchema();
+        String sql = """
+                SELECT
+                  count() AS total,
+                  countIf(sog IS NOT NULL AND sog < 1) AS lowSpeedCount,
+                  countIf(status IN (1, 5) OR (sog IS NOT NULL AND sog < 0.5)) AS stoppedCount,
+                  countIf(note != '' AND (
+                    positionCaseInsensitiveUTF8(note, '\u5f02\u5e38') > 0
+                    OR positionCaseInsensitiveUTF8(note, '\u98ce\u9669') > 0
+                    OR positionCaseInsensitiveUTF8(note, '\u544a\u8b66') > 0
+                    OR positionCaseInsensitiveUTF8(note, '\u53ef\u7591') > 0
+                    OR positionCaseInsensitiveUTF8(note, 'abnormal') > 0
+                    OR positionCaseInsensitiveUTF8(note, 'risk') > 0
+                    OR positionCaseInsensitiveUTF8(note, 'warning') > 0
+                  )) AS abnormalNoteCount,
+                  uniqExact(mmsi) AS uniqueVesselCount
+                FROM %s FINAL
+                %s
+                FORMAT JSONEachRow
+                """.formatted(tableName(), buildWhere(keyword, observedFrom, observedTo));
+        return parseRiskSummary(postQuery(sql));
+    }
+
     public PageResponse<AisRecordView> vesselTrack(String mmsi, int limit) {
         ensureSchema();
         if (!StringUtils.hasText(mmsi)) {
@@ -309,9 +393,231 @@ public class AisService {
                 FORMAT JSONEachRow
                 """.formatted(tableName(), escapedMmsi);
 
-        List<AisRecordView> items = parseRecords(postQuery(listSql));
+        List<AisRecordView> items = vesselLinkService.enrich(parseRecords(postQuery(listSql)));
         long total = parseTotal(postQuery(countSql));
         return new PageResponse<>(items, total, 1, safeLimit);
+    }
+
+    public PageResponse<AisRecordView> vesselTrackByKeyword(String keyword, int limit) {
+        ensureSchema();
+        if (!StringUtils.hasText(keyword)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择船舶编号、IMO 或船名", HttpStatus.BAD_REQUEST);
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), 20000);
+        String identityCondition = buildTrackIdentityCondition(keyword.trim());
+        String listSql = """
+                SELECT
+                  record_id AS id,
+                  mmsi,
+                  base_date_time AS baseDateTime,
+                  longitude,
+                  latitude,
+                  sog,
+                  cog,
+                  heading,
+                  vessel_name AS vesselName,
+                  imo,
+                  call_sign AS callSign,
+                  vessel_type AS vesselType,
+                  status,
+                  length,
+                  width,
+                  draft,
+                  cargo,
+                  transceiver,
+                  note,
+                  source_file AS sourceFile,
+                  imported_by_user_id AS importedByUserId,
+                  imported_by_name AS importedByName,
+                  imported_at AS importedAt
+                FROM %s FINAL
+                WHERE %s
+                ORDER BY base_date_time ASC
+                LIMIT %d
+                FORMAT JSONEachRow
+                """.formatted(tableName(), identityCondition, safeLimit);
+        String countSql = """
+                SELECT count() AS total
+                FROM %s FINAL
+                WHERE %s
+                FORMAT JSONEachRow
+                """.formatted(tableName(), identityCondition);
+
+        List<AisRecordView> items = vesselLinkService.enrich(parseRecords(postQuery(listSql)));
+        long total = parseTotal(postQuery(countSql));
+        return new PageResponse<>(items, total, 1, safeLimit);
+    }
+    public AisVesselSummaryView vesselSummary(String mmsi, String imo) {
+        ensureSchema();
+        String identityCondition = buildVesselIdentityCondition(mmsi, imo);
+        if (!StringUtils.hasText(identityCondition)) {
+            return AisVesselSummaryView.empty();
+        }
+
+        String aggregateSql = """
+                SELECT
+                  count() AS total,
+                  min(base_date_time) AS firstBaseDateTime,
+                  max(base_date_time) AS latestBaseDateTime
+                FROM %s FINAL
+                WHERE %s
+                FORMAT JSONEachRow
+                """.formatted(tableName(), identityCondition);
+        AisSummaryAggregate aggregate = parseSummaryAggregate(postQuery(aggregateSql));
+        if (aggregate.total() == 0) {
+            return AisVesselSummaryView.empty();
+        }
+
+        String latestSql = """
+                SELECT
+                  record_id AS id,
+                  mmsi,
+                  base_date_time AS baseDateTime,
+                  longitude,
+                  latitude,
+                  sog,
+                  cog,
+                  heading,
+                  vessel_name AS vesselName,
+                  imo,
+                  call_sign AS callSign,
+                  vessel_type AS vesselType,
+                  status,
+                  length,
+                  width,
+                  draft,
+                  cargo,
+                  transceiver,
+                  note,
+                  source_file AS sourceFile,
+                  imported_by_user_id AS importedByUserId,
+                  imported_by_name AS importedByName,
+                  imported_at AS importedAt
+                FROM %s FINAL
+                WHERE %s
+                ORDER BY base_date_time DESC, imported_at DESC
+                LIMIT 1
+                FORMAT JSONEachRow
+                """.formatted(tableName(), identityCondition);
+        AisRecordView latestRecord = vesselLinkService.enrich(parseRecords(postQuery(latestSql))).stream()
+                .findFirst()
+                .orElse(null);
+        return new AisVesselSummaryView(
+                aggregate.total(),
+                aggregate.firstBaseDateTime(),
+                aggregate.latestBaseDateTime(),
+                latestRecord
+        );
+    }
+
+    public PageResponse<AisRecordView> listForVessel(String mmsi, String imo, int page, int size) {
+        ensureSchema();
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        String identityCondition = buildVesselIdentityCondition(mmsi, imo);
+        if (!StringUtils.hasText(identityCondition)) {
+            return new PageResponse<>(List.of(), 0, safePage, safeSize);
+        }
+
+        int offset = (safePage - 1) * safeSize;
+        String listSql = """
+                SELECT
+                  record_id AS id,
+                  mmsi,
+                  base_date_time AS baseDateTime,
+                  longitude,
+                  latitude,
+                  sog,
+                  cog,
+                  heading,
+                  vessel_name AS vesselName,
+                  imo,
+                  call_sign AS callSign,
+                  vessel_type AS vesselType,
+                  status,
+                  length,
+                  width,
+                  draft,
+                  cargo,
+                  transceiver,
+                  note,
+                  source_file AS sourceFile,
+                  imported_by_user_id AS importedByUserId,
+                  imported_by_name AS importedByName,
+                  imported_at AS importedAt
+                FROM %s FINAL
+                WHERE %s
+                ORDER BY base_date_time DESC, imported_at DESC
+                LIMIT %d OFFSET %d
+                FORMAT JSONEachRow
+                """.formatted(tableName(), identityCondition, safeSize, offset);
+        String countSql = """
+                SELECT count() AS total
+                FROM %s FINAL
+                WHERE %s
+                FORMAT JSONEachRow
+                """.formatted(tableName(), identityCondition);
+
+        List<AisRecordView> items = vesselLinkService.enrich(parseRecords(postQuery(listSql)));
+        long total = parseTotal(postQuery(countSql));
+        return new PageResponse<>(items, total, safePage, safeSize);
+    }
+
+    public List<AisVesselDraftCandidate> vesselDraftCandidates(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo,
+            int limit
+    ) {
+        return vesselDraftCandidates(keyword, observedFrom, observedTo, limit, 0);
+    }
+
+    public List<AisVesselDraftCandidate> vesselDraftCandidates(
+            String keyword,
+            LocalDateTime observedFrom,
+            LocalDateTime observedTo,
+            int limit,
+            int offset
+    ) {
+        validateDateRange(observedFrom, observedTo);
+        ensureSchema();
+        int safeLimit = Math.min(Math.max(limit, 1), 1000);
+        int safeOffset = Math.max(offset, 0);
+        String where = buildWhere(keyword, observedFrom, observedTo, List.of("(mmsi != '' OR imo != '')"));
+        String sql = """
+                SELECT
+                  argMax(record_id, base_date_time) AS recordId,
+                  argMax(rawMmsi, base_date_time) AS mmsi,
+                  argMax(rawImo, base_date_time) AS imo,
+                  argMax(vessel_name, base_date_time) AS vesselName,
+                  argMax(call_sign, base_date_time) AS callSign,
+                  argMax(length, base_date_time) AS length,
+                  argMax(width, base_date_time) AS width,
+                  argMax(draft, base_date_time) AS draft,
+                  argMax(source_file, base_date_time) AS sourceFile,
+                  max(base_date_time) AS baseDateTime
+                FROM (
+                  SELECT
+                    record_id,
+                    mmsi AS rawMmsi,
+                    imo AS rawImo,
+                    vessel_name,
+                    call_sign,
+                    length,
+                    width,
+                    draft,
+                    source_file,
+                    base_date_time,
+                    if(mmsi != '', concat('MMSI:', mmsi), concat('IMO:', imo)) AS identityKey
+                  FROM %s FINAL
+                  %s
+                ) filtered
+                GROUP BY identityKey
+                ORDER BY baseDateTime DESC
+                LIMIT %d OFFSET %d
+                FORMAT JSONEachRow
+                """.formatted(tableName(), where, safeLimit, safeOffset);
+        return parseVesselDraftCandidates(postQuery(sql));
     }
 
     public AisImportProgress importProgress(String taskId) {
@@ -385,6 +691,30 @@ public class AisService {
         }
         progress.complete(imported, skipped);
         return new AisImportResult(uploadName, imported, skipped, safeLimit == null ? 0 : safeLimit);
+    }
+
+    public AisConvertedCsvSaveResult saveConvertedCsv(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要保存的 CSV 文件", HttpStatus.BAD_REQUEST);
+        }
+        String originalName = StringUtils.hasText(file.getOriginalFilename()) ? Path.of(file.getOriginalFilename()).getFileName().toString() : "converted_ais.csv";
+        String safeName = sanitizeCsvFileName(originalName);
+        Path rootDir = resolveConvertedCsvOutputDir();
+        Path outputFile = rootDir.resolve(safeName).normalize();
+        if (!outputFile.startsWith(rootDir)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "保存路径不合法", HttpStatus.BAD_REQUEST);
+        }
+        try {
+            Files.createDirectories(rootDir);
+            byte[] content = file.getBytes();
+            validateCsvContent(content, safeName);
+            Files.write(outputFile, content);
+            return new AisConvertedCsvSaveResult(safeName, outputFile.toString(), Files.size(outputFile));
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "CSV 文件保存失败：" + ex.getMessage(), HttpStatus.BAD_REQUEST);
+        }
     }
 
     public AisBatchOperationResult deleteBatch(AisBatchDeleteRequest request) {
@@ -466,6 +796,47 @@ public class AisService {
                     """.formatted(tableName()));
             postQuery("ALTER TABLE " + tableName() + " ADD COLUMN IF NOT EXISTS note String DEFAULT '' AFTER transceiver");
             schemaReady = true;
+        }
+    }
+
+    private Path resolveConvertedCsvOutputDir() {
+        Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        if (root.getFileName() != null && "system".equalsIgnoreCase(root.getFileName().toString())) {
+            root = root.getParent();
+        }
+        return root.resolve("handle_DATA_clean").normalize();
+    }
+
+    private String sanitizeCsvFileName(String fileName) {
+        String trimmed = fileName.trim();
+        String normalized = trimmed.replace('\\', '_').replace('/', '_').replace(':', '_');
+        if (!normalized.toLowerCase(Locale.ROOT).endsWith(".csv")) {
+            normalized = normalized + ".csv";
+        }
+        return normalized.isBlank() ? "converted_ais.csv" : normalized;
+    }
+
+    private void validateCsvContent(byte[] content, String fileName) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(content), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "CSV 文件为空：" + fileName, HttpStatus.BAD_REQUEST);
+            }
+            List<String> headers = parseCsvLine(stripBom(headerLine));
+            Map<String, Integer> columns = buildColumnIndex(headers);
+            if (columns.isEmpty()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "CSV 文件缺少表头：" + fileName, HttpStatus.BAD_REQUEST);
+            }
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                ParsedAisRow parsed = parseAisRow(parseCsvLine(line), columns, fileName);
+                if (parsed == null) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "CSV 文件包含无效 AIS 记录：" + fileName, HttpStatus.BAD_REQUEST);
+                }
+            }
         }
     }
 
@@ -674,8 +1045,34 @@ public class AisService {
         }
     }
 
+    private String buildTrackIdentityCondition(String keyword) {
+        String normalizedKeyword = normalizeNullable(keyword);
+        if (normalizedKeyword == null) {
+            return null;
+        }
+        String escapedKeyword = escapeSqlString(normalizedKeyword);
+        return """
+                (
+                  mmsi = '%1$s'
+                  OR imo = '%1$s'
+                  OR positionCaseInsensitiveUTF8(vessel_name, '%1$s') > 0
+                )
+                """.formatted(escapedKeyword).trim();
+    }
     private String buildWhere(String keyword, LocalDateTime observedFrom, LocalDateTime observedTo) {
         return buildWhere(keyword, observedFrom, observedTo, List.of());
+    }
+
+    private String buildVesselIdentityCondition(String mmsi, String imo) {
+        String normalizedMmsi = normalizeNullable(mmsi);
+        if (normalizedMmsi != null) {
+            return "mmsi = '" + escapeSqlString(normalizedMmsi) + "'";
+        }
+        String normalizedImo = normalizeNullable(imo);
+        if (normalizedImo != null) {
+            return "imo = '" + escapeSqlString(normalizedImo) + "'";
+        }
+        return null;
     }
 
     private String buildWhere(
@@ -921,13 +1318,42 @@ public class AisService {
                         text(node, "sourceFile"),
                         longValue(node, "importedByUserId"),
                         text(node, "importedByName"),
-                        localDateTime(node, "importedAt")
+                        localDateTime(node, "importedAt"),
+                        null
                 ));
             }
         } catch (IOException ex) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse 查询结果解析失败", HttpStatus.BAD_REQUEST);
         }
         return records;
+    }
+
+    private List<AisVesselDraftCandidate> parseVesselDraftCandidates(String body) {
+        List<AisVesselDraftCandidate> candidates = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!StringUtils.hasText(line)) {
+                    continue;
+                }
+                JsonNode node = objectMapper.readTree(line);
+                candidates.add(new AisVesselDraftCandidate(
+                        text(node, "recordId"),
+                        text(node, "mmsi"),
+                        text(node, "imo"),
+                        text(node, "vesselName"),
+                        text(node, "callSign"),
+                        decimal(node, "length"),
+                        decimal(node, "width"),
+                        decimal(node, "draft"),
+                        text(node, "sourceFile"),
+                        localDateTime(node, "baseDateTime")
+                ));
+            }
+            return candidates;
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse 船舶候选结果解析失败", HttpStatus.BAD_REQUEST);
+        }
     }
 
     private long parseTotal(String body) {
@@ -939,6 +1365,47 @@ public class AisService {
             return objectMapper.readTree(line).path("total").asLong(0);
         } catch (IOException ex) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse 统计结果解析失败", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private AisSummaryAggregate parseSummaryAggregate(String body) {
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line = reader.readLine();
+            if (!StringUtils.hasText(line)) {
+                return AisSummaryAggregate.empty();
+            }
+            JsonNode node = objectMapper.readTree(line);
+            long total = node.path("total").asLong(0);
+            if (total == 0) {
+                return AisSummaryAggregate.empty();
+            }
+            return new AisSummaryAggregate(
+                    total,
+                    localDateTime(node, "firstBaseDateTime"),
+                    localDateTime(node, "latestBaseDateTime")
+            );
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse AIS summary parse failed", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+
+    private AisRiskSummary parseRiskSummary(String body) {
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line = reader.readLine();
+            if (!StringUtils.hasText(line)) {
+                return AisRiskSummary.empty();
+            }
+            JsonNode node = objectMapper.readTree(line);
+            return new AisRiskSummary(
+                    node.path("total").asLong(0),
+                    node.path("lowSpeedCount").asLong(0),
+                    node.path("stoppedCount").asLong(0),
+                    node.path("abnormalNoteCount").asLong(0),
+                    node.path("uniqueVesselCount").asLong(0)
+            );
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse AIS risk summary parse failed", HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -970,6 +1437,46 @@ public class AisService {
             return values;
         } catch (IOException ex) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse result parse failed", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private List<AisDatasetDateStat> parseDatasetDateStats(String body) {
+        List<AisDatasetDateStat> stats = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!StringUtils.hasText(line)) {
+                    continue;
+                }
+                JsonNode node = objectMapper.readTree(line);
+                String datasetDate = text(node, "datasetDate");
+                if (StringUtils.hasText(datasetDate)) {
+                    stats.add(new AisDatasetDateStat(datasetDate, node.path("recordCount").asLong(0)));
+                }
+            }
+            return stats;
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse date stats parse failed", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private List<AisRankingStat> parseRankingStats(String body) {
+        List<AisRankingStat> stats = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new StringReader(body))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!StringUtils.hasText(line)) {
+                    continue;
+                }
+                JsonNode node = objectMapper.readTree(line);
+                String label = text(node, "label");
+                if (StringUtils.hasText(label)) {
+                    stats.add(new AisRankingStat(label, node.path("recordCount").asLong(0)));
+                }
+            }
+            return stats;
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ClickHouse ranking stats parse failed", HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -1029,6 +1536,14 @@ public class AisService {
 
     private String normalizeText(String value) {
         return value == null ? null : value.trim();
+    }
+
+    private String normalizeNullable(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String blankToEmpty(String value) {
@@ -1221,5 +1736,15 @@ public class AisService {
             String transceiver,
             String sourceFile
     ) {
+    }
+
+    private record AisSummaryAggregate(
+            long total,
+            LocalDateTime firstBaseDateTime,
+            LocalDateTime latestBaseDateTime
+    ) {
+        static AisSummaryAggregate empty() {
+            return new AisSummaryAggregate(0, null, null);
+        }
     }
 }

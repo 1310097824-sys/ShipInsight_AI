@@ -4,14 +4,14 @@ import java.util.List;
 
 public record ReportExportSnapshot(
         DashboardSummary summary,
-        List<NameValuePoint> protectionLevelDistribution,
-        List<NameValuePoint> iucnStatusDistribution,
+        List<NameValuePoint> riskDistribution,
+        List<NameValuePoint> operationalStatusDistribution,
         List<NameValuePoint> speciesPhylumDistribution,
         List<NameValuePoint> speciesClassDistribution,
-        List<NameValuePoint> observationTrend,
-        List<NameValuePoint> observationActivityByUser,
-        List<EcosystemAnalyticsPoint> ecosystemAnalytics,
-        List<SpeciesDistributionPoint> speciesDistributionPoints,
-        List<ObservationMapPoint> observationMapPoints
+        List<NameValuePoint> aisRecordTrend,
+        List<NameValuePoint> aisRecordActivityByUser,
+        List<EcosystemAnalyticsPoint> shippingZoneStats,
+        List<VesselDistributionPoint> vesselDistributionPoints,
+        List<AisRecordMapPoint> aisRecordMapPoints
 ) {
 }

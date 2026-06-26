@@ -67,51 +67,49 @@ export interface UserProfileView {
   roles: RoleOption[]
 }
 
-export interface TaxonOption {
+export interface VesselTypeCategoryOption {
   id: number
   parentId?: number
-  rank: string
-  scientificName: string
-  chineseName?: string
+  level: string
+  code: string
+  name?: string
 }
 
-export interface SpeciesView {
+export interface VesselProfileView {
   id: number
-  taxonId: number
+  typeCategoryId: number
   rank: string
-  scientificName: string
-  chineseName?: string
-  phylumName?: string
-  className?: string
-  orderName?: string
-  familyName?: string
-  genusName?: string
-  classificationPath?: string
-  protectionLevel?: string
-  iucnStatus?: string
-  geoRangeText?: string
+  profileName: string
+  displayName?: string
+  typePath?: string
+  riskLevel?: string
+  operationalStatus?: string
+  routeDescription?: string
+  mmsi?: string
+  imo?: string
+  vesselTypeId?: number
   status: number
   createdAt: string
   updatedAt: string
 }
 
-export interface SpeciesImageView {
+export interface VesselProfileImageView {
   id: number
   url: string
   originalFilename: string
 }
 
-export interface SpeciesDetailView extends SpeciesView {
+export interface VesselProfileDetailView extends VesselProfileView {
   description?: string
-  morphology?: string
-  habit?: string
-  habitat?: string
-  distribution?: string
-  distributionLat?: number
-  distributionLng?: number
+  specifications?: string
+  operationalPattern?: string
+  usualRegion?: string
+  routeCoverage?: string
+  homeLat?: number
+  homeLng?: number
   videoUrl?: string
   referenceText?: string
-  images: SpeciesImageView[]
+  images: VesselProfileImageView[]
 }
 
 export interface VesselTypeOption {
@@ -185,7 +183,18 @@ export interface VesselSavePayload {
   status: number
 }
 
-export interface Ecosystem {
+export interface AisLinkedVesselView {
+  vesselId: number
+  vesselName: string
+  mmsi?: string
+  imo?: string
+  riskLevel?: string
+  navigationStatus?: string
+  status: number
+  matchMethod: 'MMSI' | 'IMO' | string
+}
+
+export interface ShippingZone {
   id: number
   name: string
   type?: string
@@ -193,47 +202,66 @@ export interface Ecosystem {
   createdAt?: string
 }
 
-export interface ObservationEnvironment {
-  waterTemperature?: number | null
-  salinity?: number | null
-  ph?: number | null
-  dissolvedOxygen?: number | null
-  transparency?: number | null
-  depthMeters?: number | null
-  weather?: string
-  seaState?: string
+export type Ecosystem = ShippingZone
+
+export interface AisRecordEnvironment {
+  waterDepth?: number | null
+  weatherCondition?: string
+  seaCondition?: string
 }
 
-export interface ObservationSpeciesInput {
-  speciesId: number | null
-  countEstimated?: number | null
+export interface AisRecordVesselInput {
+  vesselId: number | null
+  crewCount?: number | null
   behavior?: string
   comment?: string
 }
 
-export interface ObservationSpeciesView {
-  speciesId: number
-  scientificName: string
-  chineseName?: string
+export interface AisRecordVesselView {
+  vesselId: number
+  vesselName: string
+  displayName?: string
   status?: number
   countEstimated?: number
   behavior?: string
   comment?: string
 }
 
-export interface ObservationView {
+export interface AisRecordManualView {
   id: number
+  shippingZoneId: number
+  shippingZoneName: string
+  recorderUserId: number
+  recorderName: string
+  recordedAt: string
+  locationLat: number
+  locationLng: number
+  locationName?: string
+  environmentJson?: string
+  note?: string
+  createdAt: string
+}
+
+export interface AisRecordManualDetailView extends AisRecordManualView {
+  linkedVessels: AisRecordVesselView[]
+}
+
+export interface ObservationView extends AisRecordManualView {
   ecosystemId: number
   ecosystemName: string
   observerUserId: number
   observerName: string
   observedAt: string
-  locationLat: number
-  locationLng: number
-  locationName?: string
   envJson?: string
-  note?: string
-  createdAt: string
+}
+
+export interface ObservationSpeciesView {
+  vesselId: number
+  scientificName?: string
+  chineseName?: string
+  countEstimated?: number | null
+  behavior?: string
+  comment?: string
 }
 
 export interface ObservationDetailView extends ObservationView {
@@ -264,6 +292,32 @@ export interface AisRecordView {
   importedByUserId?: number | null
   importedByName?: string
   importedAt?: string
+  linkedVessel?: AisLinkedVesselView | null
+}
+
+export interface AisVesselSummaryView {
+  totalRecords: number
+  firstBaseDateTime?: string
+  latestBaseDateTime?: string
+  latestRecord?: AisRecordView | null
+}
+
+export interface AisDatasetDateStat {
+  datasetDate: string
+  recordCount: number
+}
+
+export interface AisRankingStat {
+  label: string
+  recordCount: number
+}
+
+export interface AisRiskSummary {
+  total: number
+  lowSpeedCount: number
+  stoppedCount: number
+  abnormalNoteCount: number
+  uniqueVesselCount: number
 }
 
 export interface AisImportResult {
@@ -271,6 +325,12 @@ export interface AisImportResult {
   imported: number
   skipped: number
   limit: number
+}
+
+export interface AisConvertedCsvSaveResult {
+  fileName: string
+  savedPath: string
+  sizeBytes: number
 }
 
 export interface AisImportProgress {
@@ -286,6 +346,21 @@ export interface AisImportProgress {
   message: string
   startedAt: string
   updatedAt: string
+}
+
+export interface AisVesselDraftBatchRequest {
+  keyword?: string
+  observedFrom?: string
+  observedTo?: string
+  limit?: number
+}
+
+export interface AisVesselDraftBatchResult {
+  scanned: number
+  created: number
+  skippedExisting: number
+  skippedInvalid: number
+  limit: number
 }
 
 export interface AisBatchOperationResult {
@@ -340,11 +415,11 @@ export interface AuditLogView {
 }
 
 export interface DashboardSummary {
-  totalSpecies: number
-  totalObservations: number
-  totalEcosystems: number
+  totalVesselProfiles: number
+  totalAisRecords: number
+  totalShippingZones: number
   totalUsers: number
-  recentObservationCount: number
+  recentAisRecordCount: number
 }
 
 export interface NameValuePoint {
@@ -352,35 +427,35 @@ export interface NameValuePoint {
   value: number
 }
 
-export interface SpeciesDistributionPoint {
-  speciesId: number
-  scientificName: string
-  chineseName?: string
+export interface VesselDistributionPoint {
+  vesselId: number
+  vesselName: string
+  displayName?: string
   locationLat: number
   locationLng: number
-  geoRangeText?: string
-  protectionLevel?: string
-  iucnStatus?: string
+  routeDescription?: string
+  riskLevel?: string
+  operationalStatus?: string
 }
 
-export interface ObservationMapPoint {
-  observationId: number
-  ecosystemName: string
-  observerName: string
-  observedAt: string
+export interface AisRecordMapPoint {
+  recordId: number
+  shippingZoneName: string
+  recorderName: string
+  recordedAt: string
   locationLat: number
   locationLng: number
   locationName?: string
-  speciesCount: number
+  linkedVesselCount: number
   note?: string
 }
 
-export interface EcosystemAnalyticsPoint {
-  ecosystemId: number
-  ecosystemName: string
-  ecosystemType?: string
-  observationCount: number
-  speciesCount: number
+export interface ShippingZoneStats {
+  zoneId: number
+  zoneName: string
+  zoneType?: string
+  recordCount: number
+  linkedVesselCount: number
 }
 
 export interface MediaFile {
@@ -397,13 +472,13 @@ export interface MediaFile {
   uploadedAt: string
 }
 
-export interface AiRelatedSpeciesRecord {
+export interface AiRelatedVesselRecord {
   id: number
-  chineseName?: string
-  scientificName: string
+  displayName?: string
+  profileName: string
   classificationPath?: string
-  protectionLevel?: string
-  iucnStatus?: string
+  riskLevel?: string
+  operationalStatus?: string
 }
 
 export interface AiIdentificationCandidate {
@@ -414,21 +489,21 @@ export interface AiIdentificationCandidate {
 }
 
 export interface AiIdentifyImageResponse {
-  likelyChineseName?: string
-  likelyScientificName?: string
+  likelyDisplayName?: string
+  likelyProfileName?: string
   confidence: number
   needsHumanReview: boolean
   confidenceLabel: string
   reasoning?: string
   candidates: AiIdentificationCandidate[]
-  relatedSpeciesRecords: AiRelatedSpeciesRecord[]
+  relatedVesselRecords: AiRelatedVesselRecord[]
   ragEvidence: RagEvidenceItem[]
   confidenceAdjustedByRag: boolean
   ragConclusion?: string
   conflictWarnings: string[]
 }
 
-export interface AiSpeciesAutocompleteResponse {
+export interface AiVesselAutocompleteResponse {
   chineseName?: string
   scientificName?: string
   phylumName?: string
@@ -436,8 +511,8 @@ export interface AiSpeciesAutocompleteResponse {
   orderName?: string
   familyName?: string
   genusName?: string
-  protectionLevel?: string
-  iucnStatus?: string
+  riskLevel?: string
+  operationalStatus?: string
   description?: string
   morphology?: string
   habit?: string
@@ -447,7 +522,7 @@ export interface AiSpeciesAutocompleteResponse {
   summary?: string
   confidence: number
   notes: string[]
-  relatedSpeciesRecords: AiRelatedSpeciesRecord[]
+  relatedVesselRecords: AiRelatedVesselRecord[]
 }
 
 export interface AiPolishTextResponse {
@@ -457,7 +532,7 @@ export interface AiPolishTextResponse {
   keywords: string[]
 }
 
-export interface AiTranslateSpeciesResponse {
+export interface AiTranslateVesselResponse {
   targetLanguage: string
   description?: string
   morphology?: string
@@ -468,8 +543,8 @@ export interface AiTranslateSpeciesResponse {
   summary?: string
 }
 
-export interface AiObservationSpeciesItem {
-  speciesId?: number | null
+export interface AiRecordVesselItem {
+  vesselId?: number | null
   scientificName?: string
   chineseName?: string
   countEstimated?: number | null
@@ -477,48 +552,53 @@ export interface AiObservationSpeciesItem {
   comment?: string
 }
 
-export interface AiObservationAnomaly {
+export interface AiRecordAnomaly {
   severity: string
-  speciesName: string
+  vesselName: string
   message: string
   suggestion?: string
   distanceKm?: number
 }
 
-export interface AiObservationAnalysisResponse {
+export interface AiRecordAnalysisResponse {
   summary?: string
   tags: string[]
   reviewNotes: string[]
-  anomalies: AiObservationAnomaly[]
+  anomalies: AiRecordAnomaly[]
   needsReview: boolean
 }
 
-export interface AiObservationQualityIssue {
+export interface AiRecordQualityIssue {
   severity: string
   title: string
   message: string
   suggestion?: string
 }
 
-export interface AiObservationQualityResponse {
-  observationId: number
+export interface AiRecordQualityResponse {
+  recordId: number
   score: number
   grade: string
   summary: string
   strengths: string[]
-  issues: AiObservationQualityIssue[]
+  issues: AiRecordQualityIssue[]
   needsReview: boolean
 }
 
 export interface AiAssistantStructuredQuery {
   intent: string
   locationKeyword?: string
-  ecosystemKeyword?: string
-  speciesKeyword?: string
-  protectionLevel?: string
-  iucnStatus?: string
+  routeKeyword?: string
+  vesselKeyword?: string
+  riskLevel?: string
+  navigationStatus?: string
   yearsBack?: number
   recentDays?: number
+  observedFrom?: string
+  observedTo?: string
+  dateKeyword?: string
+  metric?: string
+  groupBy?: string
   includeTrend: boolean
   riskOnly: boolean
   limit?: number
@@ -571,8 +651,8 @@ export interface AiReviewTicketView {
   submittedByName: string
   reviewerUserId?: number
   reviewerName?: string
-  likelyChineseName?: string
-  likelyScientificName?: string
+  likelyDisplayName?: string
+  likelyProfileName?: string
   confidence: number
   needsHumanReview: boolean
   imageMediaId?: number
@@ -586,12 +666,12 @@ export interface AiReviewTicketDetailView extends AiReviewTicketView {
   imageMediaId?: number
   reasoning?: string
   candidates: AiIdentificationCandidate[]
-  relatedSpeciesRecords: AiRelatedSpeciesRecord[]
+  relatedVesselRecords: AiRelatedVesselRecord[]
   ragEvidence: RagEvidenceItem[]
   initialRecognitionJson?: string
   reviewEvidenceJson?: string
   submitNote?: string
-  finalSpeciesId?: number
+  finalVesselId?: number
   finalChineseName?: string
   finalScientificName?: string
   reviewNote?: string
@@ -601,6 +681,8 @@ export interface AiReportView {
   id: number
   reportType: string
   days: number
+  periodStart?: string
+  periodEnd?: string
   title: string
   summary: string
   createdBy: number
@@ -613,6 +695,31 @@ export interface AiReportDetailView extends AiReportView {
   risks: string[]
   recommendations: string[]
   evidence: string[]
+  metrics?: AiReportMetrics
+}
+
+export interface AiReportMetrics {
+  periodStart?: string
+  periodEnd?: string
+  latestDatasetDate?: string
+  totalRecords: number
+  uniqueVesselCount: number
+  lowSpeedCount: number
+  stoppedCount: number
+  abnormalNoteCount: number
+  riskSignalCount: number
+  topDates: AiReportDateStat[]
+  topImporters: AiReportRankingStat[]
+}
+
+export interface AiReportDateStat {
+  datasetDate: string
+  recordCount: number
+}
+
+export interface AiReportRankingStat {
+  label: string
+  recordCount: number
 }
 
 export interface RagDocumentView {
@@ -749,34 +856,7 @@ export interface QdrantStatusView {
   errorMessage?: string
 }
 
-// ==================== Quiz ====================
-
-export interface QuizQuestion {
-  id: number
-  category: string
-  type: string
-  title: string
-  options: string
-  answer: string
-  explanation?: string
-  difficulty: string
-  status: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface QuizRecord {
-  id: number
-  userId: number
-  score: number
-  total: number
-  categories?: string
-  mode: string
-  startedAt: string
-  finishedAt?: string
-}
-
-// ==================== Quiz ====================
+// ==================== Quiz 知识问答 ====================
 
 export interface QuizQuestion {
   id: number

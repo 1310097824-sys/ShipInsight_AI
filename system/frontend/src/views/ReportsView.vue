@@ -16,9 +16,9 @@
     </section>
 
     <div class="summary-grid">
-      <StatCard eyebrow="船舶档案" :value="summary.totalSpecies" hint="用于判断船舶档案覆盖规模" />
-      <StatCard eyebrow="AIS 记录" :value="summary.totalObservations" hint="用于判断累计 AIS 数据量" />
-      <StatCard eyebrow="航运节点" :value="summary.totalEcosystems" hint="用于判断港口、锚地、航道和重点水域覆盖面" />
+      <StatCard eyebrow="船舶档案" :value="summary.totalVesselProfiles" hint="用于判断船舶档案覆盖规模" />
+      <StatCard eyebrow="AIS 记录" :value="summary.totalAisRecords" hint="用于判断累计 AIS 数据量" />
+      <StatCard eyebrow="航运节点" :value="summary.totalShippingZones" hint="用于判断港口、锚地、航道和重点水域覆盖面" />
       <StatCard eyebrow="活跃用户" :value="summary.totalUsers" hint="当前启用中的系统用户数量" />
     </div>
 
@@ -29,19 +29,19 @@
             <div class="panel-header">
               <strong>船舶分布地图</strong>
               <div class="panel-header__tools">
-                <el-select v-model="selectedProtectionLevel" size="small" class="panel-filter">
+                <el-select v-model="selectedRiskLevel" size="small" class="panel-filter">
                   <el-option
-                    v-for="option in speciesProtectionOptions"
+                    v-for="option in vesselRiskLevelOptions"
                     :key="option.value"
                     :label="option.label"
                     :value="option.value"
                   />
                 </el-select>
-                <span>{{ speciesMapMarkers.length }} / {{ speciesDistributionPoints.length }} 个船舶点</span>
+                <span>{{ vesselMapMarkers.length }} / {{ vesselDistributionPoints.length }} 个船舶点</span>
               </div>
             </div>
           </template>
-          <ReportMapPanel :points="speciesMapMarkers" empty-description="暂无船舶分布点" :height="360" />
+          <ReportMapPanel :points="vesselMapMarkers" empty-description="暂无船舶分布点" :height="360" />
         </el-card>
       </el-col>
       <el-col :lg="12" :xs="24">
@@ -49,10 +49,10 @@
           <template #header>
             <div class="panel-header">
               <strong>AIS 点位地图</strong>
-              <span>{{ observationMapMarkers.length }} 个 AIS 点</span>
+              <span>{{ aisRecordMapMarkers.length }} 个 AIS 点</span>
             </div>
           </template>
-          <ReportMapPanel :points="observationMapMarkers" empty-description="暂无 AIS 点位" :height="360" />
+          <ReportMapPanel :points="aisRecordMapMarkers" empty-description="暂无 AIS 点位" :height="360" />
         </el-card>
       </el-col>
     </el-row>
@@ -131,15 +131,14 @@ import type { EChartsOption } from 'echarts'
 import {
   downloadReportExport,
   fetchDashboardSummary,
-  fetchEcosystemAnalytics,
-  fetchIucnStatusDistribution,
-  fetchObservationActivity,
-  fetchObservationMapPoints,
-  fetchObservationTrend,
-  fetchProtectionLevelDistribution,
-  fetchSpeciesClassDistribution,
-  fetchSpeciesDistributionPoints,
-  fetchSpeciesPhylumDistribution,
+  fetchShippingZoneStats,
+  fetchOperationalStatusDistribution,
+  fetchAisRecordActivity,
+  fetchAisRecordMapPoints,
+  fetchAisRecordTrend,
+  fetchRiskLevelDistribution,
+  fetchVesselTypeDistribution,
+  fetchVesselDistributionPoints,
 } from '@/api/reports'
 import ChartPanel from '@/components/ChartPanel.vue'
 import ReportMapPanel from '@/components/ReportMapPanel.vue'
@@ -147,15 +146,15 @@ import StatCard from '@/components/StatCard.vue'
 import { listenDataChanged } from '@/utils/dataSync'
 import { triggerBlobDownload } from '@/utils/download'
 import type {
+  AisRecordMapPoint,
   DashboardSummary,
-  EcosystemAnalyticsPoint,
   NameValuePoint,
-  ObservationMapPoint,
-  SpeciesDistributionPoint,
+  ShippingZoneStats,
+  VesselDistributionPoint,
 } from '@/types/gsmv'
 
-const ALL_PROTECTION_LEVEL = '__ALL__'
-const EMPTY_PROTECTION_LEVEL = '__EMPTY__'
+const ALL_RISK_LEVEL = '__ALL__'
+const EMPTY_RISK_LEVEL = '__EMPTY__'
 
 const dayOptions = [
   { label: '近 7 天', value: 7 },
@@ -167,49 +166,49 @@ const days = ref(30)
 const loading = ref(false)
 const exportingExcel = ref(false)
 const exportingPdf = ref(false)
-const selectedProtectionLevel = ref(ALL_PROTECTION_LEVEL)
+const selectedRiskLevel = ref(ALL_RISK_LEVEL)
 
 const summary = ref<DashboardSummary>({
-  totalSpecies: 0,
-  totalObservations: 0,
-  totalEcosystems: 0,
+  totalVesselProfiles: 0,
+  totalAisRecords: 0,
+  totalShippingZones: 0,
   totalUsers: 0,
-  recentObservationCount: 0,
+  recentAisRecordCount: 0,
 })
 const protectionPoints = ref<NameValuePoint[]>([])
 const iucnPoints = ref<NameValuePoint[]>([])
 const phylumPoints = ref<NameValuePoint[]>([])
 const classPoints = ref<NameValuePoint[]>([])
-const ecosystemPoints = ref<EcosystemAnalyticsPoint[]>([])
+const shippingZoneStats = ref<ShippingZoneStats[]>([])
 const trendPoints = ref<NameValuePoint[]>([])
-const observerPoints = ref<NameValuePoint[]>([])
-const speciesDistributionPoints = ref<SpeciesDistributionPoint[]>([])
-const observationMapPoints = ref<ObservationMapPoint[]>([])
+const recorderPoints = ref<NameValuePoint[]>([])
+const vesselDistributionPoints = ref<VesselDistributionPoint[]>([])
+const aisRecordMapPoints = ref<AisRecordMapPoint[]>([])
 
 let stopDataSync: (() => void) | undefined
 
-const speciesProtectionOptions = computed(() => {
+const vesselRiskLevelOptions = computed(() => {
   const optionMap = new Map<string, string>()
 
-  speciesDistributionPoints.value.forEach((item) => {
-    const value = normalizeProtectionLevel(item.protectionLevel)
+  vesselDistributionPoints.value.forEach((item) => {
+    const value = normalizeRiskLevel(item.riskLevel)
     if (!optionMap.has(value)) {
-      optionMap.set(value, item.protectionLevel?.trim() || '未填写风险等级')
+      optionMap.set(value, item.riskLevel?.trim() || '未填写风险等级')
     }
   })
 
   return [
-    { label: '全部风险等级', value: ALL_PROTECTION_LEVEL },
+    { label: '全部风险等级', value: ALL_RISK_LEVEL },
     ...Array.from(optionMap.entries()).map(([value, label]) => ({ value, label })),
   ]
 })
 
-const filteredSpeciesDistributionPoints = computed(() =>
-  speciesDistributionPoints.value.filter((item) => {
-    if (selectedProtectionLevel.value === ALL_PROTECTION_LEVEL) {
+const filteredVesselDistributionPoints = computed(() =>
+  vesselDistributionPoints.value.filter((item) => {
+    if (selectedRiskLevel.value === ALL_RISK_LEVEL) {
       return true
     }
-    return normalizeProtectionLevel(item.protectionLevel) === selectedProtectionLevel.value
+    return normalizeRiskLevel(item.riskLevel) === selectedRiskLevel.value
   }),
 )
 
@@ -306,7 +305,7 @@ const ecosystemOption = computed<EChartsOption>(() => ({
   },
   xAxis: {
     type: 'category',
-    data: ecosystemPoints.value.map((item) => item.ecosystemName),
+    data: shippingZoneStats.value.map((item) => item.zoneName),
     axisLabel: createWrappedAxisLabel(),
     axisTick: { alignWithLabel: true },
   },
@@ -315,13 +314,13 @@ const ecosystemOption = computed<EChartsOption>(() => ({
     {
       name: 'AIS 记录数',
       type: 'bar',
-      data: ecosystemPoints.value.map((item) => item.observationCount),
+      data: shippingZoneStats.value.map((item) => item.recordCount),
       itemStyle: { color: '#00e5ff', borderRadius: [8, 8, 0, 0] },
     },
     {
       name: '船型/目标数',
       type: 'bar',
-      data: ecosystemPoints.value.map((item) => item.speciesCount),
+      data: shippingZoneStats.value.map((item) => item.linkedVesselCount),
       itemStyle: { color: '#20ff9f', borderRadius: [8, 8, 0, 0] },
     },
   ],
@@ -352,43 +351,43 @@ const observerOption = computed<EChartsOption>(() => ({
   tooltip: { trigger: 'axis' },
   xAxis: {
     type: 'category',
-    data: observerPoints.value.map((item) => item.name),
+    data: recorderPoints.value.map((item) => item.name),
     axisLabel: { interval: 0, rotate: 18 },
   },
   yAxis: { type: 'value' },
   series: [
     {
       type: 'bar',
-      data: observerPoints.value.map((item) => item.value),
+      data: recorderPoints.value.map((item) => item.value),
       itemStyle: { color: '#7c3cff', borderRadius: [8, 8, 0, 0] },
     },
   ],
   grid: { left: 36, right: 20, top: 28, bottom: 48 },
 }))
 
-const speciesMapMarkers = computed(() =>
-  filteredSpeciesDistributionPoints.value.map((item) => ({
-    id: item.speciesId,
+const vesselMapMarkers = computed(() =>
+  filteredVesselDistributionPoints.value.map((item) => ({
+    id: item.vesselId,
     lat: item.locationLat,
     lng: item.locationLng,
-    title: item.chineseName || item.scientificName,
-    subtitle: item.chineseName ? item.scientificName : '',
+    title: item.displayName || item.vesselName,
+    subtitle: item.displayName ? item.vesselName : '',
     lines: [
-      `地理范围：${item.geoRangeText || '未填写'}`,
-      `风险等级：${item.protectionLevel || '未填写'}`,
-      `航行状态：${item.iucnStatus || '未填写'}`,
+      `地理范围：${item.routeDescription || '未填写'}`,
+      `风险等级：${item.riskLevel || '未填写'}`,
+      `航行状态：${item.operationalStatus || '未填写'}`,
     ],
   })),
 )
 
-const observationMapMarkers = computed(() =>
-  observationMapPoints.value.map((item) => ({
-    id: item.observationId,
+const aisRecordMapMarkers = computed(() =>
+  aisRecordMapPoints.value.map((item) => ({
+    id: item.recordId,
     lat: item.locationLat,
     lng: item.locationLng,
-    title: item.locationName || item.ecosystemName,
-    subtitle: `${item.ecosystemName} / ${item.observerName}`,
-    lines: [item.observedAt, `关联目标 ${item.speciesCount} 个`, item.note || '无备注'],
+    title: item.locationName || item.shippingZoneName,
+    subtitle: `${item.shippingZoneName} / ${item.recorderName}`,
+    lines: [item.recordedAt, `关联目标 ${item.linkedVesselCount} 个`, item.note || '无备注'],
   })),
 )
 
@@ -408,15 +407,15 @@ async function loadReports() {
       observationPoints,
     ] = await Promise.all([
       fetchDashboardSummary(),
-      fetchProtectionLevelDistribution(),
-      fetchIucnStatusDistribution(),
-      fetchSpeciesPhylumDistribution(),
-      fetchSpeciesClassDistribution(),
-      fetchEcosystemAnalytics(),
-      fetchObservationTrend(days.value),
-      fetchObservationActivity(days.value),
-      fetchSpeciesDistributionPoints(),
-      fetchObservationMapPoints(),
+      fetchRiskLevelDistribution(),
+      fetchOperationalStatusDistribution(),
+      fetchVesselTypeDistribution('phylum'),
+      fetchVesselTypeDistribution('class'),
+      fetchShippingZoneStats(),
+      fetchAisRecordTrend(days.value),
+      fetchAisRecordActivity(days.value),
+      fetchVesselDistributionPoints(),
+      fetchAisRecordMapPoints(),
     ])
 
     summary.value = summaryData
@@ -424,14 +423,14 @@ async function loadReports() {
     iucnPoints.value = iucn
     phylumPoints.value = phylum
     classPoints.value = classes
-    ecosystemPoints.value = ecosystem
+    shippingZoneStats.value = ecosystem
     trendPoints.value = trend
-    observerPoints.value = observers
-    speciesDistributionPoints.value = speciesPoints
-    observationMapPoints.value = observationPoints
+    recorderPoints.value = observers
+    vesselDistributionPoints.value = speciesPoints
+    aisRecordMapPoints.value = observationPoints
 
-    if (!speciesProtectionOptions.value.some((option) => option.value === selectedProtectionLevel.value)) {
-      selectedProtectionLevel.value = ALL_PROTECTION_LEVEL
+    if (!vesselRiskLevelOptions.value.some((option) => option.value === selectedRiskLevel.value)) {
+      selectedRiskLevel.value = ALL_RISK_LEVEL
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '报表加载失败')
@@ -455,14 +454,14 @@ async function handleExport(format: 'excel' | 'pdf') {
   }
 }
 
-function normalizeProtectionLevel(value?: string) {
+function normalizeRiskLevel(value?: string) {
   const trimmed = value?.trim()
-  return trimmed || EMPTY_PROTECTION_LEVEL
+  return trimmed || EMPTY_RISK_LEVEL
 }
 
 onMounted(() => {
   stopDataSync = listenDataChanged((detail) => {
-    if (['species', 'observation', 'ecosystem', 'user'].includes(detail.type)) {
+    if (['vesselProfile', 'aisRecord', 'shippingZone', 'user'].includes(detail.type)) {
       void loadReports()
     }
   })

@@ -7,12 +7,15 @@ public class AiReport {
     private Long id;
     private String reportType;
     private Integer days;
+    private LocalDateTime periodStart;
+    private LocalDateTime periodEnd;
     private String title;
     private String summary;
     private String highlightsJson;
     private String risksJson;
     private String recommendationsJson;
     private String evidenceJson;
+    private String metricsJson;
     private Long createdBy;
     private String creatorName;
     private LocalDateTime createdAt;
@@ -23,6 +26,10 @@ public class AiReport {
     public void setReportType(String reportType) { this.reportType = reportType; }
     public Integer getDays() { return days; }
     public void setDays(Integer days) { this.days = days; }
+    public LocalDateTime getPeriodStart() { return periodStart; }
+    public void setPeriodStart(LocalDateTime periodStart) { this.periodStart = periodStart; }
+    public LocalDateTime getPeriodEnd() { return periodEnd; }
+    public void setPeriodEnd(LocalDateTime periodEnd) { this.periodEnd = periodEnd; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getSummary() { return summary; }
@@ -35,6 +42,8 @@ public class AiReport {
     public void setRecommendationsJson(String recommendationsJson) { this.recommendationsJson = recommendationsJson; }
     public String getEvidenceJson() { return evidenceJson; }
     public void setEvidenceJson(String evidenceJson) { this.evidenceJson = evidenceJson; }
+    public String getMetricsJson() { return metricsJson; }
+    public void setMetricsJson(String metricsJson) { this.metricsJson = metricsJson; }
     public Long getCreatedBy() { return createdBy; }
     public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
     public String getCreatorName() { return creatorName; }

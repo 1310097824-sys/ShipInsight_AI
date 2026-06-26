@@ -44,8 +44,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/captcha").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/avatar/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/species/images/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/quiz/ai/weather/interpret").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/quiz/ai/weather/test").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/quiz/ai/weather/interpret").permitAll()

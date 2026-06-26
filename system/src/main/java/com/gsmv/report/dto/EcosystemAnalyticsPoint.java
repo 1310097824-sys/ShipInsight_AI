@@ -1,10 +1,10 @@
 package com.gsmv.report.dto;
 
 public record EcosystemAnalyticsPoint(
-        Long ecosystemId,
-        String ecosystemName,
-        String ecosystemType,
-        long observationCount,
-        long speciesCount
+        Long zoneId,
+        String zoneName,
+        String zoneType,
+        long recordCount,
+        long linkedVesselCount
 ) {
 }

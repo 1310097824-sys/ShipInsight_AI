@@ -12,7 +12,7 @@ class RagTextChunkerTests {
     @Test
     void shouldSplitLongTextWithReadableSummary() {
         RagTextChunker chunker = new RagTextChunker();
-        String text = "湛江近海海草床记录中华白海豚、绿海龟和珊瑚礁鱼类。".repeat(80);
+        String text = "某区域生态环境监测记录常见物种分布与栖息地特征。".repeat(80);
 
         List<RagTextChunker.ChunkDraft> chunks = chunker.chunk("湛江样带", text);
 

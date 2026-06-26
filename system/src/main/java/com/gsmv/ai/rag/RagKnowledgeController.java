@@ -5,6 +5,7 @@ import com.gsmv.common.ApiResponse;
 import com.gsmv.common.PageResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -115,6 +116,20 @@ public class RagKnowledgeController {
     @PreAuthorize("hasAuthority('RAG_READ')")
     public ApiResponse<List<RagDtos.RagSourceView>> listSources() {
         return ApiResponse.success(ragKnowledgeService.listSources());
+    }
+
+    @PostMapping("/clean-failed")
+    @PreAuthorize("hasAuthority('RAG_MANAGE')")
+    public ApiResponse<Map<String, Object>> cleanFailedDocuments() {
+        int cleaned = ragKnowledgeService.cleanFailedDocuments();
+        return ApiResponse.success(Map.of("cleaned", cleaned));
+    }
+
+    @DeleteMapping("/documents/source-type/{sourceType}")
+    @PreAuthorize("hasAuthority('RAG_MANAGE')")
+    public ApiResponse<Map<String, Object>> deleteBySourceType(@PathVariable String sourceType) {
+        int cleaned = ragKnowledgeService.deleteBySourceType(sourceType);
+        return ApiResponse.success(Map.of("sourceType", sourceType, "cleaned", cleaned));
     }
 
     @GetMapping("/qdrant/status")

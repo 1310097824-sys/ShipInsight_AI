@@ -12,7 +12,7 @@
       <div class="toolbar toolbar--wrap">
         <el-input v-model="query.keyword" placeholder="名称 / 类型" clearable style="max-width: 220px" />
         <el-select v-model="query.type" placeholder="航运节点类型" clearable style="width: 180px">
-          <el-option v-for="item in ecosystemTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          <el-option v-for="item in shippingZoneTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
         <el-button type="primary" @click="handleSearch">查询</el-button>
         <el-button @click="handleReset">重置</el-button>
@@ -22,7 +22,7 @@
         <el-table-column prop="name" label="名称" min-width="180" />
         <el-table-column prop="type" label="类型" min-width="140">
           <template #default="{ row }">
-            {{ ecosystemTypeLabelMap[row.type] || row.type || '-' }}
+            {{ shippingZoneTypeLabelMap[row.type] || row.type || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="description" label="描述" min-width="320" show-overflow-tooltip />
@@ -30,7 +30,7 @@
           <template #default="{ row }">
             <el-space>
               <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
-              <el-button v-if="canWrite" link type="danger" @click="removeEcosystem(row)">删除</el-button>
+              <el-button v-if="canWrite" link type="danger" @click="removeShippingZone(row)">删除</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -54,7 +54,7 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="form.type" clearable style="width: 100%" placeholder="请选择航运节点类型">
-            <el-option v-for="item in ecosystemTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            <el-option v-for="item in shippingZoneTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="描述">
@@ -72,12 +72,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createEcosystem, deleteEcosystem, fetchEcosystems, updateEcosystem } from '@/api/ecosystems'
+import { createShippingZone, deleteShippingZone, fetchShippingZones, updateShippingZone } from '@/api/ecosystems'
 import { useAuthStore } from '@/stores/auth'
 import { notifyDataChanged } from '@/utils/dataSync'
-import type { Ecosystem } from '@/types/gsmv'
+import type { ShippingZone } from '@/types/gsmv'
 
-const ecosystemTypeOptions = [
+const shippingZoneTypeOptions = [
   { label: '近海航区', value: 'OFFSHORE' },
   { label: '主航道', value: 'REEF' },
   { label: '锚地', value: 'MANGROVE' },
@@ -88,7 +88,7 @@ const ecosystemTypeOptions = [
   { label: '管制水域', value: 'WETLAND' },
 ]
 
-const ecosystemTypeLabelMap = Object.fromEntries(ecosystemTypeOptions.map((item) => [item.value, item.label]))
+const shippingZoneTypeLabelMap = Object.fromEntries(shippingZoneTypeOptions.map((item) => [item.value, item.label]))
 
 const authStore = useAuthStore()
 
@@ -96,7 +96,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
-const rows = ref<Ecosystem[]>([])
+const rows = ref<ShippingZone[]>([])
 
 const canWrite = computed(() => authStore.authorities.includes('ECOSYSTEM_WRITE'))
 
@@ -126,7 +126,7 @@ function resetForm() {
 async function loadData() {
   loading.value = true
   try {
-    const pageData = await fetchEcosystems({
+    const pageData = await fetchShippingZones({
       keyword: query.keyword || undefined,
       type: query.type || undefined,
       page: pagination.page,
@@ -159,7 +159,7 @@ function openCreate() {
   dialogVisible.value = true
 }
 
-function openEdit(row: Ecosystem) {
+function openEdit(row: ShippingZone) {
   editingId.value = row.id
   form.name = row.name
   form.type = row.type || ''
@@ -182,14 +182,14 @@ async function submit() {
     }
 
     if (editingId.value) {
-      await updateEcosystem(editingId.value, payload)
+      await updateShippingZone(editingId.value, payload)
       ElMessage.success('航运节点已更新')
     } else {
-      await createEcosystem(payload)
+      await createShippingZone(payload)
       ElMessage.success('航运节点已创建')
     }
 
-    notifyDataChanged('ecosystem')
+    notifyDataChanged('shippingZone')
     dialogVisible.value = false
     await loadData()
   } catch (error) {
@@ -199,7 +199,7 @@ async function submit() {
   }
 }
 
-async function removeEcosystem(row: Ecosystem) {
+async function removeShippingZone(row: ShippingZone) {
   try {
     await ElMessageBox.confirm(
       `删除后将移除航运节点“${row.name}”的档案信息。若已有 AIS 记录引用它，系统会阻止删除。是否继续？`,
@@ -210,8 +210,8 @@ async function removeEcosystem(row: Ecosystem) {
         cancelButtonText: '取消',
       },
     )
-    await deleteEcosystem(row.id)
-    notifyDataChanged('ecosystem')
+    await deleteShippingZone(row.id)
+    notifyDataChanged('shippingZone')
     ElMessage.success('航运节点已删除')
     await loadData()
   } catch (error) {

@@ -26,17 +26,19 @@ import com.gsmv.ai.review.model.AiReviewTicket;
 import com.gsmv.audit.service.AuditService;
 import com.gsmv.common.PageResponse;
 import com.gsmv.common.exception.NotFoundException;
-import com.gsmv.ecosystem.mapper.EcosystemMapper;
-import com.gsmv.ecosystem.model.Ecosystem;
+import com.gsmv.ecosystem.mapper.ShippingZoneMapper;
+import com.gsmv.ecosystem.model.ShippingZone;
 import com.gsmv.media.MediaFileService;
 import com.gsmv.media.model.MediaFile;
-import com.gsmv.observation.dto.ObservationSpeciesView;
-import com.gsmv.observation.dto.ObservationView;
-import com.gsmv.observation.mapper.ObservationMapper;
+import com.gsmv.observation.dto.AisRecordManualVesselView;
+import com.gsmv.observation.dto.AisRecordManualView;
+import com.gsmv.observation.mapper.AisRecordManualMapper;
 import com.gsmv.security.CurrentUser;
 import com.gsmv.security.SecurityUtils;
-import com.gsmv.species.dto.SpeciesRow;
-import com.gsmv.species.mapper.SpeciesMapper;
+import com.gsmv.vessel.dto.VesselRow;
+import com.gsmv.vessel.mapper.VesselMapper;
+import com.gsmv.vessel.model.VesselProfile;
+import com.gsmv.vessel.model.VesselProfileRow;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -67,6 +69,7 @@ public class RagKnowledgeService {
     public static final String SOURCE_SPECIES = "SPECIES";
     public static final String SOURCE_OBSERVATION = "OBSERVATION";
     public static final String SOURCE_ECOSYSTEM = "ECOSYSTEM";
+    public static final String SOURCE_VESSEL = "VESSEL";
     public static final String SOURCE_AI_REPORT = "AI_REPORT";
     public static final String SOURCE_AI_REVIEW = "AI_REVIEW_TICKET";
     public static final String SOURCE_UPLOAD = "UPLOAD";
@@ -93,11 +96,11 @@ public class RagKnowledgeService {
     private final RagIngestJobMapper ingestJobMapper;
     private final RagIngestItemMapper ingestItemMapper;
     private final RagSourceMapper sourceMapper;
-    private final SpeciesMapper speciesMapper;
-    private final ObservationMapper observationMapper;
-    private final EcosystemMapper ecosystemMapper;
+    private final AisRecordManualMapper observationMapper;
+    private final ShippingZoneMapper ecosystemMapper;
     private final AiReportMapper aiReportMapper;
     private final AiReviewTicketMapper aiReviewTicketMapper;
+    private final VesselMapper vesselMapper;
     private final MediaFileService mediaFileService;
     private final RagTextExtractor textExtractor;
     private final RagTextChunker textChunker;
@@ -116,11 +119,11 @@ public class RagKnowledgeService {
             RagIngestJobMapper ingestJobMapper,
             RagIngestItemMapper ingestItemMapper,
             RagSourceMapper sourceMapper,
-            SpeciesMapper speciesMapper,
-            ObservationMapper observationMapper,
-            EcosystemMapper ecosystemMapper,
+            AisRecordManualMapper observationMapper,
+            ShippingZoneMapper ecosystemMapper,
             AiReportMapper aiReportMapper,
             AiReviewTicketMapper aiReviewTicketMapper,
+            VesselMapper vesselMapper,
             MediaFileService mediaFileService,
             RagTextExtractor textExtractor,
             RagTextChunker textChunker,
@@ -138,11 +141,11 @@ public class RagKnowledgeService {
         this.ingestJobMapper = ingestJobMapper;
         this.ingestItemMapper = ingestItemMapper;
         this.sourceMapper = sourceMapper;
-        this.speciesMapper = speciesMapper;
         this.observationMapper = observationMapper;
         this.ecosystemMapper = ecosystemMapper;
         this.aiReportMapper = aiReportMapper;
         this.aiReviewTicketMapper = aiReviewTicketMapper;
+        this.vesselMapper = vesselMapper;
         this.mediaFileService = mediaFileService;
         this.textExtractor = textExtractor;
         this.textChunker = textChunker;
@@ -232,6 +235,52 @@ public class RagKnowledgeService {
     }
 
     @Transactional
+    public int cleanFailedDocuments() {
+        CurrentUser currentUser = SecurityUtils.requireCurrentUser();
+        List<RagDocument> failedDocs = documentMapper.findPage(null, null, STATUS_FAILED, 5000, 0);
+        int count = 0;
+        for (RagDocument doc : failedDocs) {
+            try {
+                qdrantVectorClient.deleteByDocumentId(doc.getId());
+            } catch (RuntimeException ignored) {
+                // Qdrant may be unavailable; still clean DB records.
+            }
+            chunkMapper.deleteByDocumentId(doc.getId());
+            documentMapper.markDeleted(doc.getId());
+            count++;
+        }
+        if (count > 0) {
+            auditService.record(currentUser.userId(), "AI", "CLEAN_FAILED_RAG_DOCUMENTS", "RAG", null, true,
+                    "{\"cleaned\":" + count + "}");
+            assistantQueryCache.invalidateAll();
+        }
+        return count;
+    }
+
+    @Transactional
+    public int deleteBySourceType(String sourceType) {
+        CurrentUser currentUser = SecurityUtils.requireCurrentUser();
+        List<RagDocument> docs = documentMapper.findActiveBySourceType(sourceType, 5000);
+        int count = 0;
+        for (RagDocument doc : docs) {
+            try {
+                qdrantVectorClient.deleteByDocumentId(doc.getId());
+            } catch (RuntimeException ignored) {
+                // Qdrant may be unavailable; still clean DB records.
+            }
+            chunkMapper.deleteByDocumentId(doc.getId());
+            documentMapper.markDeleted(doc.getId());
+            count++;
+        }
+        if (count > 0) {
+            auditService.record(currentUser.userId(), "AI", "DELETE_BY_SOURCE_TYPE", "RAG", null, true,
+                    "{\"sourceType\":\"" + sourceType + "\",\"cleaned\":" + count + "}");
+            assistantQueryCache.invalidateAll();
+        }
+        return count;
+    }
+
+    @Transactional
     public RagDtos.RagIndexJobView rebuildAll() {
         CurrentUser currentUser = SecurityUtils.requireCurrentUser();
         RagIndexJob job = newJob("FULL_REBUILD", null, null, currentUser.userId());
@@ -244,19 +293,21 @@ public class RagKnowledgeService {
         int failed = 0;
         String lastError = null;
 
-        for (SpeciesRow row : speciesMapper.findPage(null, 1, null, null, null, null, 5000, 0)) {
-            IndexOutcome outcome = indexSystemSource(SOURCE_SPECIES, row.id(), buildSpeciesTitle(row), buildSpeciesText(row), false);
+        for (VesselRow row : vesselMapper.findPage(null, 1, null, null, null, null, 5000, 0)) {
+            VesselProfile vessel = vesselMapper.findById(row.id());
+            if (vessel == null) continue;
+            IndexOutcome outcome = indexSystemSource(SOURCE_SPECIES, row.id(), buildVesselTitle(vessel), buildVesselText(vessel), false);
             totalDocs++;
             totalChunks += outcome.chunkCount();
             if (outcome.success()) success++; else { failed++; lastError = outcome.message(); }
         }
-        for (ObservationView view : observationMapper.findPage(null, null, null, null, 5000, 0)) {
+        for (AisRecordManualView view : observationMapper.findPage(null, null, null, null, 5000, 0)) {
             IndexOutcome outcome = indexSystemSource(SOURCE_OBSERVATION, view.id(), buildObservationTitle(view), buildObservationText(view), false);
             totalDocs++;
             totalChunks += outcome.chunkCount();
             if (outcome.success()) success++; else { failed++; lastError = outcome.message(); }
         }
-        for (Ecosystem ecosystem : ecosystemMapper.findAll()) {
+        for (ShippingZone ecosystem : ecosystemMapper.findAll()) {
             IndexOutcome outcome = indexSystemSource(SOURCE_ECOSYSTEM, ecosystem.getId(), buildEcosystemTitle(ecosystem), buildEcosystemText(ecosystem), false);
             totalDocs++;
             totalChunks += outcome.chunkCount();
@@ -264,6 +315,13 @@ public class RagKnowledgeService {
         }
         for (AiReport report : aiReportMapper.findPage(5000, 0)) {
             IndexOutcome outcome = indexSystemSource(SOURCE_AI_REPORT, report.getId(), report.getTitle(), buildReportText(report), false);
+            totalDocs++;
+            totalChunks += outcome.chunkCount();
+            if (outcome.success()) success++; else { failed++; lastError = outcome.message(); }
+        }
+        for (VesselRow row : vesselMapper.findPage(null, 1, null, null, null, null, 5000, 0)) {
+            VesselProfile vessel = vesselMapper.findById(row.id());
+            IndexOutcome outcome = indexSystemSource(SOURCE_VESSEL, row.id(), buildVesselTitle(vessel), buildVesselText(vessel), false);
             totalDocs++;
             totalChunks += outcome.chunkCount();
             if (outcome.success()) success++; else { failed++; lastError = outcome.message(); }
@@ -532,16 +590,16 @@ public class RagKnowledgeService {
 
     public void syncSpecies(Long id) {
         try {
-            SpeciesRow row = speciesMapper.findRowById(id);
-            if (row == null) {
+            VesselProfile vessel = vesselMapper.findById(id);
+            if (vessel == null) {
                 markSourceDeleted(SOURCE_SPECIES, id);
                 return;
             }
-            if (!Integer.valueOf(1).equals(row.status())) {
+            if (vessel.getStatus() != 1) {
                 markSourceDeleted(SOURCE_SPECIES, id);
                 return;
             }
-            indexSystemSource(SOURCE_SPECIES, id, buildSpeciesTitle(row), buildSpeciesText(row), true);
+            indexSystemSource(SOURCE_SPECIES, id, buildVesselTitle(vessel), buildVesselText(vessel), true);
         } catch (RuntimeException ignored) {
             // RAG indexing must not block core data maintenance.
         }
@@ -549,7 +607,7 @@ public class RagKnowledgeService {
 
     public void syncObservation(Long id) {
         try {
-            ObservationView view = observationMapper.findViewById(id);
+            AisRecordManualView view = observationMapper.findViewById(id);
             if (view == null) {
                 markSourceDeleted(SOURCE_OBSERVATION, id);
                 return;
@@ -561,7 +619,7 @@ public class RagKnowledgeService {
 
     public void syncEcosystem(Long id) {
         try {
-            Ecosystem ecosystem = ecosystemMapper.findById(id);
+            ShippingZone ecosystem = ecosystemMapper.findById(id);
             if (ecosystem == null) {
                 markSourceDeleted(SOURCE_ECOSYSTEM, id);
                 return;
@@ -589,9 +647,23 @@ public class RagKnowledgeService {
         }
     }
 
+    public void syncVessel(Long id) {
+        try {
+            VesselProfile vessel = vesselMapper.findById(id);
+            if (vessel == null || !Integer.valueOf(1).equals(vessel.getStatus())) {
+                markSourceDeleted(SOURCE_VESSEL, id);
+                return;
+            }
+            indexSystemSource(SOURCE_VESSEL, id, buildVesselTitle(vessel), buildVesselText(vessel), true);
+        } catch (RuntimeException ignored) {
+            // RAG indexing must not block core data maintenance.
+        }
+    }
+
     public void markSourceDeleted(String sourceType, Long sourceId) {
         RagDocument document = documentMapper.findBySource(sourceType, sourceId);
         if (document != null) {
+            qdrantVectorClient.deleteByDocumentId(document.getId());
             documentMapper.markDeleted(document.getId());
             chunkMapper.markDeletedByDocumentId(document.getId());
         }
@@ -982,35 +1054,14 @@ public class RagKnowledgeService {
         }
     }
 
-    private String buildSpeciesTitle(SpeciesRow row) {
-        return firstNonBlank(row.chineseName(), row.scientificName(), "物种档案#" + row.id());
-    }
-
-    private String buildSpeciesText(SpeciesRow row) {
-        return String.join("\n",
-                "来源：物种档案",
-                "中文名：" + safe(row.chineseName()),
-                "学名：" + safe(row.scientificName()),
-                "保护等级：" + safe(row.protectionLevel()),
-                "IUCN濒危状态：" + safe(row.iucnStatus()),
-                "物种简介：" + safe(row.description()),
-                "形态特征：" + safe(row.morphology()),
-                "生活习性：" + safe(row.habit()),
-                "栖息环境：" + safe(row.habitat()),
-                "分布区域：" + safe(row.distribution()),
-                "地理范围：" + safe(row.geoRangeText()),
-                "参考文献：" + safe(row.referenceText())
-        );
-    }
-
-    private String buildObservationTitle(ObservationView view) {
+    private String buildObservationTitle(AisRecordManualView view) {
         return firstNonBlank(view.locationName(), view.ecosystemName(), "观测记录#" + view.id());
     }
 
-    private String buildObservationText(ObservationView view) {
-        List<ObservationSpeciesView> speciesItems = observationMapper.findSpeciesViews(view.id());
-        String speciesText = speciesItems.stream()
-                .map(item -> firstNonBlank(item.chineseName(), item.scientificName(), "物种#" + item.speciesId())
+    private String buildObservationText(AisRecordManualView view) {
+        List<AisRecordManualVesselView> vesselItems = observationMapper.findVesselViews(view.id());
+        String vesselText = vesselItems.stream()
+                .map(item -> firstNonBlank(item.vesselName(), item.mmsi(), "船舶#" + item.vesselId())
                         + nullableSuffix(" 数量", item.countEstimated())
                         + nullableSuffix(" 行为", item.behavior())
                         + nullableSuffix(" 备注", item.comment()))
@@ -1025,15 +1076,15 @@ public class RagKnowledgeService {
                 "坐标：" + safe(view.locationLat()) + "," + safe(view.locationLng()),
                 "环境参数：" + safe(view.envJson()),
                 "备注：" + safe(view.note()),
-                "关联物种：" + speciesText
+                "关联船舶：" + vesselText
         );
     }
 
-    private String buildEcosystemTitle(Ecosystem ecosystem) {
+    private String buildEcosystemTitle(ShippingZone ecosystem) {
         return firstNonBlank(ecosystem.getName(), "生态系统#" + ecosystem.getId());
     }
 
-    private String buildEcosystemText(Ecosystem ecosystem) {
+    private String buildEcosystemText(ShippingZone ecosystem) {
         return String.join("\n",
                 "来源：生态系统",
                 "名称：" + safe(ecosystem.getName()),
@@ -1053,6 +1104,29 @@ public class RagKnowledgeService {
                 "风险提示：" + safe(report.getRisksJson()),
                 "建议行动：" + safe(report.getRecommendationsJson()),
                 "数据依据：" + safe(report.getEvidenceJson())
+        );
+    }
+
+    private String buildVesselTitle(VesselProfile vessel) {
+        return firstNonBlank(vessel.getVesselName(), vessel.getMmsi(), vessel.getImo(), "船舶档案#" + vessel.getId());
+    }
+
+    private String buildVesselText(VesselProfile vessel) {
+        return String.join("\n",
+                "来源：船舶档案",
+                "船名：" + safe(vessel.getVesselName()),
+                "MMSI：" + safe(vessel.getMmsi()),
+                "IMO：" + safe(vessel.getImo()),
+                "呼号：" + safe(vessel.getCallSign()),
+                "船旗国：" + safe(vessel.getFlagState()),
+                "运营商：" + safe(vessel.getOperatorName()),
+                "船东：" + safe(vessel.getOwnerName()),
+                "风险等级：" + safe(vessel.getRiskLevel()),
+                "航行状态：" + safe(vessel.getNavigationStatus()),
+                "母港：" + safe(vessel.getHomePort()),
+                "常航区域：" + safe(vessel.getUsualRegion()),
+                "航线范围：" + safe(vessel.getRouteArea()),
+                "备注：" + safe(vessel.getNote())
         );
     }
 
@@ -1653,8 +1727,8 @@ public class RagKnowledgeService {
     }
 
     private ExternalQuery resolveExternalQuery(String query) {
-        String originalQuery = StringUtils.hasText(query) ? query.trim() : "marine biodiversity";
-        SpeciesRow matchedSpecies = findBestSpeciesMatch(originalQuery);
+        String originalQuery = StringUtils.hasText(query) ? query.trim() : "biodiversity";
+        VesselProfileRow matchedSpecies = findBestSpeciesMatch(originalQuery);
         if (matchedSpecies != null && StringUtils.hasText(matchedSpecies.scientificName())) {
             String displayName = StringUtils.hasText(matchedSpecies.chineseName())
                     ? matchedSpecies.chineseName() + " / " + matchedSpecies.scientificName()
@@ -1694,13 +1768,19 @@ public class RagKnowledgeService {
         );
     }
 
+    private VesselProfileRow findBestSpeciesMatch(String query) {
+        // TODO: Implement species matching logic
+        // For now, return null to allow compilation
+        return null;
+    }
+
     private ExternalQuery resolveExternalQueryWithAlias(String originalQuery) {
         String normalized = normalizeNameToken(originalQuery);
         if (!StringUtils.hasText(normalized)) {
             return null;
         }
         Map<String, CommonNameAlias> aliases = Map.of(
-                "三文鱼", new CommonNameAlias("三文鱼", "Salmo salar", "Common Chinese seafood name; resolved to Atlantic salmon for external biodiversity APIs"),
+                "三文鱼", new CommonNameAlias("三文鱼", "Salmo salar", "Common Chinese species name; resolved to Atlantic salmon for external species APIs"),
                 "大西洋鲑", new CommonNameAlias("大西洋鲑", "Salmo salar", "Chinese common name for Atlantic salmon")
         );
         for (Map.Entry<String, CommonNameAlias> entry : aliases.entrySet()) {
@@ -1726,7 +1806,7 @@ public class RagKnowledgeService {
         try {
             JsonNode result = aiModelGateway.deepSeekJson(List.of(
                     AiModelGateway.message("system", """
-                            You convert Chinese marine organism common names into scientific names for biodiversity APIs.
+                            You convert Chinese organism common names into scientific names for species APIs.
                             Return JSON only with fields: chineseName, scientificName, confidence, reason.
                             If the name is ambiguous, choose the most common biological taxon and lower confidence.
                             If no credible Latin binomial can be inferred, return an empty scientificName and confidence 0.
@@ -1763,25 +1843,26 @@ public class RagKnowledgeService {
         }
     }
 
-    private SpeciesRow findBestSpeciesMatch(String query) {
+    private VesselRow findBestVesselMatch(String query) {
         if (!StringUtils.hasText(query)) {
             return null;
         }
         try {
-            List<SpeciesRow> matches = speciesMapper.findPage(query.trim(), null, null, null, null, null, 20, 0);
+            List<VesselRow> matches = vesselMapper.findPage(query.trim(), null, null, null, null, null, 20, 0);
             if (matches == null || matches.isEmpty()) {
                 return null;
             }
             String normalizedQuery = normalizeNameToken(query);
-            for (SpeciesRow row : matches) {
-                if (normalizedQuery.equals(normalizeNameToken(row.chineseName()))
-                        || normalizedQuery.equals(normalizeNameToken(row.scientificName()))) {
+            for (VesselRow row : matches) {
+                if (normalizedQuery.equals(normalizeNameToken(row.vesselName()))
+                        || normalizedQuery.equals(normalizeNameToken(row.mmsi()))
+                        || normalizedQuery.equals(normalizeNameToken(row.imo()))) {
                     return row;
                 }
             }
-            for (SpeciesRow row : matches) {
-                String chineseName = normalizeNameToken(row.chineseName());
-                if (StringUtils.hasText(chineseName) && (chineseName.contains(normalizedQuery) || normalizedQuery.contains(chineseName))) {
+            for (VesselRow row : matches) {
+                String vesselName = normalizeNameToken(row.vesselName());
+                if (StringUtils.hasText(vesselName) && (vesselName.contains(normalizedQuery) || normalizedQuery.contains(vesselName))) {
                     return row;
                 }
             }

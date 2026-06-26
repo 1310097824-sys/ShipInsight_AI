@@ -3,8 +3,8 @@
     <section class="page-hero rag-hero">
       <div>
         <span class="rag-hero__eyebrow">RETRIEVAL AUGMENTED GENERATION</span>
-        <h2>AIS 知识库</h2>
-        <p>把系统数据、分析报告、公开资料和上传文档切成可追溯证据，让全系统 AI 先检索、再判断、再组织。</p>
+        <h2>RAG 知识库</h2>
+        <p>围绕船舶档案、航运节点、分析报告、网页/PDF 航运资料和上传文档构建可追溯证据库；系统 AIS 明细不在这里做向量化存储。</p>
       </div>
       <div class="rag-hero__actions">
         <el-upload
@@ -25,6 +25,17 @@
         />
         <el-button type="primary" plain :loading="ingesting" @click="openMultiFilePicker">批量上传</el-button>
         <el-button type="success" :loading="rebuilding" @click="rebuildAll">全量重建</el-button>
+        <el-button type="warning" plain :loading="cleaningFailed" @click="cleanFailed">清理失败文档</el-button>
+        <el-dropdown trigger="click" @command="cleanSourceType">
+          <el-button type="danger" plain :loading="cleaningTypes">
+            按类型清理<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="AI_REVIEW_TICKET">AI 评审工单</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </section>
 
@@ -32,7 +43,7 @@
       <article>
         <span>知识文档</span>
         <strong>{{ pagination.total }}</strong>
-        <small>系统实体与上传资料统一纳入索引</small>
+        <small>船舶档案、航运节点、报告与上传资料统一纳入索引</small>
       </article>
       <article>
         <span>当前页可用</span>
@@ -68,14 +79,14 @@
       </article>
 
       <article class="knowledge-console__ingest">
-        <span>公开知识采集</span>
+        <span>外部航运资料采集</span>
         <div class="knowledge-console__inline">
           <el-select v-model="externalSource" style="width: 150px">
             <el-option v-for="item in sources" :key="item.code" :label="item.code" :value="item.code" />
           </el-select>
           <el-input
             v-model="externalQuery"
-            :placeholder="externalSource === 'WEB_PDF' ? '一行一个白名单PDF/DOCX/TXT/MD链接' : '船名、MMSI、航线或主题关键词'"
+            :placeholder="externalSource === 'WEB_PDF' ? '一行一个网页 / PDF / DOCX / TXT / MD 链接' : '航运主题、船名、港口或航线关键词'"
             clearable
           />
         </div>
@@ -177,7 +188,7 @@
               <span>{{ sourceTypeLabel(selected.document.sourceType) }}</span>
               <h3>{{ selected.document.title }}</h3>
               <p v-if="selected.document.errorMessage">{{ selected.document.errorMessage }}</p>
-              <p v-else>已生成 {{ selected.document.chunkCount }} 个知识分块，可被智能分析、分析报告和船舶档案补全召回。</p>
+              <p v-else>已生成 {{ selected.document.chunkCount }} 个知识分块，可被智能分析、态势研判和分析报告召回；系统 AIS 明细不会作为这里的向量正文。</p>
             </div>
 
             <div class="rag-chunks">
@@ -309,8 +320,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
 import {
+  cleanFailedRagDocuments,
+  deleteBySourceType,
   deleteRagDocument,
   fetchQdrantStatus,
   fetchRagDocumentDetail,
@@ -344,6 +358,8 @@ const loading = ref(false)
 const uploading = ref(false)
 const rebuilding = ref(false)
 const rebuildingQdrant = ref(false)
+const cleaningFailed = ref(false)
+const cleaningTypes = ref(false)
 const searching = ref(false)
 const jobsLoading = ref(false)
 const ingesting = ref(false)
@@ -360,8 +376,8 @@ const qdrantStatus = ref<QdrantStatusView | null>(null)
 const searchResults = ref<RagSearchResultView[]>([])
 const searchQuery = ref('湛江港附近有哪些高风险船舶？')
 const folderPath = ref('')
-const externalSource = ref('OBIS')
-const externalQuery = ref('湛江港 AIS 航线')
+const externalSource = ref('WEB_PDF')
+const externalQuery = ref('湛江港 航运态势')
 const webUrls = ref('')
 const multiFileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -378,16 +394,10 @@ const pagination = reactive({
 })
 
 const sourceTypeOptions = [
-  { label: '船舶档案', value: 'SPECIES' },
-  { label: 'AIS 记录', value: 'OBSERVATION' },
-  { label: '航运网络', value: 'ECOSYSTEM' },
+  { label: '船舶档案', value: 'VESSEL' },
   { label: '分析报告', value: 'AI_REPORT' },
   { label: '上传文档', value: 'UPLOAD' },
-  { label: 'OBIS 公开数据', value: 'EXTERNAL_OBIS' },
-  { label: 'GBIF 公开数据', value: 'EXTERNAL_GBIF' },
-  { label: '船舶登记资料', value: 'EXTERNAL_WORMS' },
-  { label: '风险规则资料', value: 'EXTERNAL_IUCN' },
-  { label: '网页资料', value: 'EXTERNAL_WEB_PDF' },
+  { label: '网页 / PDF 航运资料', value: 'EXTERNAL_WEB_PDF' },
 ]
 
 const readyCount = computed(() => rows.value.filter((item) => item.status === 'READY').length)
@@ -398,7 +408,7 @@ function sourceTypeLabel(value: string) {
     return matched
   }
   if (value?.startsWith('EXTERNAL_')) {
-    return `${value.replace('EXTERNAL_', '')} 外部资料`
+    return value === 'EXTERNAL_WEB_PDF' ? '网页 / PDF 航运资料' : `${value.replace('EXTERNAL_', '')} 外部资料`
   }
   return value
 }
@@ -529,6 +539,50 @@ async function rebuildAll() {
   }
 }
 
+async function cleanFailed() {
+  cleaningFailed.value = true
+  try {
+    const result = await cleanFailedRagDocuments()
+    if (result.cleaned > 0) {
+      ElMessage.success(`已清理 ${result.cleaned} 条失败文档`)
+      await loadDocuments()
+    } else {
+      ElMessage.info('没有需要清理的失败文档')
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '清理失败文档出错')
+  } finally {
+    cleaningFailed.value = false
+  }
+}
+
+const sourceTypeLabels: Record<string, string> = {
+  AI_REVIEW_TICKET: 'AI 评审工单',
+}
+
+async function cleanSourceType(sourceType: string) {
+  const label = sourceTypeLabels[sourceType] || sourceType
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除所有「${label}」类型的文档吗？此操作会同时清理 Qdrant 向量和数据库记录，不可恢复。`,
+      '确认按类型清理',
+      { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  cleaningTypes.value = true
+  try {
+    const result = await deleteBySourceType(sourceType)
+    ElMessage.success(`已清理 ${result.cleaned} 条「${label}」文档`)
+    await loadDocuments()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '按类型清理失败')
+  } finally {
+    cleaningTypes.value = false
+  }
+}
+
 async function runSearch() {
   if (!searchQuery.value.trim()) {
     ElMessage.warning('请输入检索问题')
@@ -567,10 +621,7 @@ async function loadSources() {
     sources.value = await fetchRagSources()
   } catch {
     sources.value = [
-      { id: 0, code: 'OBIS', name: 'OBIS', sourceType: 'EXTERNAL_API', enabled: true },
-      { id: 1, code: 'GBIF', name: 'GBIF', sourceType: 'EXTERNAL_API', enabled: true },
-      { id: 2, code: 'WORMS', name: 'WoRMS', sourceType: 'EXTERNAL_API', enabled: true },
-      { id: 3, code: 'WEB_PDF', name: 'Web documents', sourceType: 'WEB_DOCUMENT', enabled: true },
+      { id: 3, code: 'WEB_PDF', name: '网页 / PDF 航运资料', sourceType: 'WEB_DOCUMENT', enabled: true },
     ]
   }
 }

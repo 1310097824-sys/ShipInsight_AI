@@ -3,9 +3,9 @@ package com.gsmv.report.export;
 import com.gsmv.report.dto.DashboardSummary;
 import com.gsmv.report.dto.EcosystemAnalyticsPoint;
 import com.gsmv.report.dto.NameValuePoint;
-import com.gsmv.report.dto.ObservationMapPoint;
+import com.gsmv.report.dto.AisRecordMapPoint;
 import com.gsmv.report.dto.ReportExportSnapshot;
-import com.gsmv.report.dto.SpeciesDistributionPoint;
+import com.gsmv.report.dto.VesselDistributionPoint;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -38,17 +38,17 @@ public final class ReportPdfExporter {
             PDFont font = loadFont(document);
             PdfLineWriter writer = new PdfLineWriter(document, font);
 
-            writer.writeTitle("GSMV 数据分析报表");
+            writer.writeTitle("ShipInsight 船舶态势分析报表");
             writeSummary(writer, snapshot.summary());
-            writeNameValueSection(writer, "保护等级分布", "保护等级", snapshot.protectionLevelDistribution());
-            writeNameValueSection(writer, "濒危状态分布", "濒危状态", snapshot.iucnStatusDistribution());
-            writeNameValueSection(writer, "物种门级分布", "门", snapshot.speciesPhylumDistribution());
-            writeNameValueSection(writer, "物种纲级分布", "纲", snapshot.speciesClassDistribution());
-            writeNameValueSection(writer, "近 30 天观测趋势", "日期", snapshot.observationTrend());
-            writeNameValueSection(writer, "观测人员活跃度", "观测人员", snapshot.observationActivityByUser());
-            writeEcosystemSection(writer, snapshot.ecosystemAnalytics());
-            writeSpeciesMapSection(writer, snapshot.speciesDistributionPoints());
-            writeObservationMapSection(writer, snapshot.observationMapPoints());
+            writeNameValueSection(writer, "风险等级分布", "风险等级", snapshot.riskDistribution());
+            writeNameValueSection(writer, "航行状态分布", "航行状态", snapshot.operationalStatusDistribution());
+            writeNameValueSection(writer, "船舶大类分布", "大类", snapshot.speciesPhylumDistribution());
+            writeNameValueSection(writer, "船舶子类分布", "子类", snapshot.speciesClassDistribution());
+            writeNameValueSection(writer, "近 30 天交通趋势", "日期", snapshot.aisRecordTrend());
+            writeNameValueSection(writer, "记录人员活跃度", "记录人员", snapshot.aisRecordActivityByUser());
+            writeEcosystemSection(writer, snapshot.shippingZoneStats());
+            writeSpeciesMapSection(writer, snapshot.vesselDistributionPoints());
+            writeObservationMapSection(writer, snapshot.aisRecordMapPoints());
 
             writer.close();
             document.save(outputStream);
@@ -75,11 +75,11 @@ public final class ReportPdfExporter {
 
     private static void writeSummary(PdfLineWriter writer, DashboardSummary summary) throws IOException {
         writer.writeSection("系统概览");
-        writer.writeKeyValue("物种总数", String.valueOf(summary.totalSpecies()));
-        writer.writeKeyValue("观测次数", String.valueOf(summary.totalObservations()));
-        writer.writeKeyValue("生态系统数量", String.valueOf(summary.totalEcosystems()));
+        writer.writeKeyValue("船舶档案数", String.valueOf(summary.totalVesselProfiles()));
+        writer.writeKeyValue("手动记录数", String.valueOf(summary.totalAisRecords()));
+        writer.writeKeyValue("航运区域数", String.valueOf(summary.totalShippingZones()));
         writer.writeKeyValue("活跃用户数", String.valueOf(summary.totalUsers()));
-        writer.writeKeyValue("近 7 天观测次数", String.valueOf(summary.recentObservationCount()));
+        writer.writeKeyValue("近 7 天观测次数", String.valueOf(summary.recentAisRecordCount()));
         writer.writeBlankLine();
     }
 
@@ -98,45 +98,45 @@ public final class ReportPdfExporter {
     }
 
     private static void writeEcosystemSection(PdfLineWriter writer, List<EcosystemAnalyticsPoint> rows) throws IOException {
-        writer.writeSection("生态系统统计");
-        writer.writeLine("生态系统 | 类型 | 观测次数 | 发现物种数");
+        writer.writeSection("航运区域统计");
+        writer.writeLine("区域名 | 类型 | 记录数 | 关联船舶数");
         for (EcosystemAnalyticsPoint row : rows) {
             writer.writeLine(
-                    nullSafe(row.ecosystemName()) + " | " +
-                    nullSafe(row.ecosystemType()) + " | " +
-                    row.observationCount() + " | " +
-                    row.speciesCount()
+                    nullSafe(row.zoneName()) + " | " +
+                    nullSafe(row.zoneType()) + " | " +
+                    row.recordCount() + " | " +
+                    row.linkedVesselCount()
             );
         }
         writer.writeBlankLine();
     }
 
-    private static void writeSpeciesMapSection(PdfLineWriter writer, List<SpeciesDistributionPoint> rows) throws IOException {
-        writer.writeSection("物种分布点位");
-        writer.writeLine("中文名 | 学名 | 坐标 | 地理范围 | 保护等级 | 濒危状态");
-        for (SpeciesDistributionPoint row : rows) {
+    private static void writeSpeciesMapSection(PdfLineWriter writer, List<VesselDistributionPoint> rows) throws IOException {
+        writer.writeSection("船舶分布点位");
+        writer.writeLine("船名 | 显示名 | 坐标 | 航线范围 | 风险等级 | 航行状态");
+        for (VesselDistributionPoint row : rows) {
             writer.writeLine(
-                    nullSafe(row.chineseName()) + " | " +
-                    nullSafe(row.scientificName()) + " | " +
+                    nullSafe(row.displayName()) + " | " +
+                    nullSafe(row.profileName()) + " | " +
                     toCoordinate(row.locationLat(), row.locationLng()) + " | " +
-                    nullSafe(row.geoRangeText()) + " | " +
-                    nullSafe(row.protectionLevel()) + " | " +
-                    nullSafe(row.iucnStatus())
+                    nullSafe(row.routeDescription()) + " | " +
+                    nullSafe(row.riskLevel()) + " | " +
+                    nullSafe(row.operationalStatus())
             );
         }
         writer.writeBlankLine();
     }
 
-    private static void writeObservationMapSection(PdfLineWriter writer, List<ObservationMapPoint> rows) throws IOException {
-        writer.writeSection("观测地点概要");
-        writer.writeLine("地点 | 生态系统 | 观测人员 | 观测时间 | 物种数 | 备注");
-        for (ObservationMapPoint row : rows) {
+    private static void writeObservationMapSection(PdfLineWriter writer, List<AisRecordMapPoint> rows) throws IOException {
+        writer.writeSection("AIS 记录概要");
+        writer.writeLine("地点 | 航运区域 | 记录人员 | 记录时间 | 船舶数 | 备注");
+        for (AisRecordMapPoint row : rows) {
             writer.writeLine(
                     nullSafe(row.locationName()) + " | " +
-                    nullSafe(row.ecosystemName()) + " | " +
-                    nullSafe(row.observerName()) + " | " +
-                    toText(row.observedAt()) + " | " +
-                    row.speciesCount() + " | " +
+                    nullSafe(row.shippingZoneName()) + " | " +
+                    nullSafe(row.recorderName()) + " | " +
+                    toText(row.recordedAt()) + " | " +
+                    row.linkedVesselCount() + " | " +
                     nullSafe(row.note())
             );
         }

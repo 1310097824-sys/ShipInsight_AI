@@ -13,11 +13,11 @@ public interface AiReportMapper {
 
     @Insert("""
             INSERT INTO ai_research_report (
-              report_type, days, title, summary, highlights_json, risks_json,
-              recommendations_json, evidence_json, created_by
+              report_type, days, period_start, period_end, title, summary, highlights_json, risks_json,
+              recommendations_json, evidence_json, metrics_json, created_by
             ) VALUES (
-              #{reportType}, #{days}, #{title}, #{summary}, #{highlightsJson}, #{risksJson},
-              #{recommendationsJson}, #{evidenceJson}, #{createdBy}
+              #{reportType}, #{days}, #{periodStart}, #{periodEnd}, #{title}, #{summary}, #{highlightsJson}, #{risksJson},
+              #{recommendationsJson}, #{evidenceJson}, #{metricsJson}, #{createdBy}
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -27,12 +27,13 @@ public interface AiReportMapper {
             SELECT r.*, COALESCE(u.display_name, u.username) AS creator_name
             FROM ai_research_report r
             JOIN sys_user u ON u.id = r.created_by
+            WHERE r.metrics_json IS NOT NULL
             ORDER BY r.created_at DESC
             LIMIT #{limit} OFFSET #{offset}
             """)
     List<AiReport> findPage(@Param("limit") int limit, @Param("offset") int offset);
 
-    @Select("SELECT COUNT(*) FROM ai_research_report")
+    @Select("SELECT COUNT(*) FROM ai_research_report WHERE metrics_json IS NOT NULL")
     long count();
 
     @Select("""

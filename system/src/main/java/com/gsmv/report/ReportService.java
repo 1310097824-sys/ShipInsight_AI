@@ -3,9 +3,9 @@ package com.gsmv.report;
 import com.gsmv.report.dto.DashboardSummary;
 import com.gsmv.report.dto.EcosystemAnalyticsPoint;
 import com.gsmv.report.dto.NameValuePoint;
-import com.gsmv.report.dto.ObservationMapPoint;
+import com.gsmv.report.dto.AisRecordMapPoint;
 import com.gsmv.report.dto.ReportExportSnapshot;
-import com.gsmv.report.dto.SpeciesDistributionPoint;
+import com.gsmv.report.dto.VesselDistributionPoint;
 import com.gsmv.report.export.ReportExcelExporter;
 import com.gsmv.report.export.ReportPdfExporter;
 import com.gsmv.report.mapper.ReportMapper;
@@ -31,12 +31,16 @@ public class ReportService {
         );
     }
 
-    public List<NameValuePoint> protectionLevelDistribution() {
-        return reportMapper.protectionLevelDistribution();
+    public List<NameValuePoint> riskDistribution() {
+        return reportMapper.riskDistribution();
     }
 
-    public List<NameValuePoint> iucnStatusDistribution() {
+    public List<NameValuePoint> operationalStatusDistribution() {
         return reportMapper.iucnStatusDistribution();
+    }
+
+    public List<NameValuePoint> protectionLevelDistribution() {
+        return reportMapper.protectionLevelDistribution();
     }
 
     public List<NameValuePoint> speciesPhylumDistribution() {
@@ -47,23 +51,23 @@ public class ReportService {
         return reportMapper.speciesClassDistribution();
     }
 
-    public List<NameValuePoint> observationTrend(int days) {
+    public List<NameValuePoint> aisRecordTrend(int days) {
         return reportMapper.observationTrend(sanitizeDays(days));
     }
 
-    public List<NameValuePoint> observationActivityByUser(int days) {
+    public List<NameValuePoint> aisRecordActivityByUser(int days) {
         return reportMapper.observationActivityByUser(sanitizeDays(days));
     }
 
-    public List<EcosystemAnalyticsPoint> ecosystemAnalytics() {
+    public List<EcosystemAnalyticsPoint> shippingZoneStats() {
         return reportMapper.ecosystemAnalytics();
     }
 
-    public List<SpeciesDistributionPoint> speciesDistributionPoints() {
+    public List<VesselDistributionPoint> vesselDistributionPoints() {
         return reportMapper.speciesDistributionPoints();
     }
 
-    public List<ObservationMapPoint> observationMapPoints() {
+    public List<AisRecordMapPoint> aisRecordMapPoints() {
         return reportMapper.observationMapPoints();
     }
 
@@ -79,15 +83,15 @@ public class ReportService {
         int safeDays = sanitizeDays(days);
         return new ReportExportSnapshot(
                 dashboardSummary(),
-                protectionLevelDistribution(),
-                iucnStatusDistribution(),
+                riskDistribution(),
+                operationalStatusDistribution(),
                 speciesPhylumDistribution(),
                 speciesClassDistribution(),
-                observationTrend(safeDays),
-                observationActivityByUser(safeDays),
-                ecosystemAnalytics(),
-                speciesDistributionPoints(),
-                observationMapPoints()
+                aisRecordTrend(safeDays),
+                aisRecordActivityByUser(safeDays),
+                shippingZoneStats(),
+                vesselDistributionPoints(),
+                aisRecordMapPoints()
         );
     }
 
