@@ -5,6 +5,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean
     authority?: string
+    role?: string
   }
 }
 
@@ -32,6 +33,7 @@ const routes = [
       { path: 'reports', component: () => import('@/views/ReportsView.vue'), meta: { authority: 'REPORT_READ' } },
       { path: 'audits', component: () => import('@/views/AuditView.vue'), meta: { authority: 'AUDIT_READ' } },
       { path: 'users', component: () => import('@/views/UsersView.vue'), meta: { authority: 'USER_ADMIN' } },
+      { path: 'roles', component: () => import('@/views/RoleView.vue'), meta: { role: 'ADMIN' } },
       { path: 'profile', component: () => import('@/views/ProfileView.vue') },
       { path: 'quiz', component: () => import('@/views/QuizHome.vue'), meta: { authority: 'QUIZ_READ' } },
       { path: 'quiz/ai', component: () => import('@/views/QuizAiAssistant.vue') },
@@ -62,11 +64,18 @@ router.beforeEach((to) => {
     return `/login?redirect=${encodeURIComponent(to.fullPath)}`
   }
   const raw = localStorage.getItem(PROFILE_KEY)
-  const authorities: string[] = raw ? JSON.parse(raw).authorities ?? [] : []
-  const roles: string[] = raw ? JSON.parse(raw).roles ?? [] : []
+  const profile = raw ? JSON.parse(raw) : {}
+  const authorities: string[] = Array.isArray(profile.authorities) ? profile.authorities : []
+  const rolesRaw: unknown[] = Array.isArray(profile.roles) ? profile.roles : []
+  const roles: string[] = rolesRaw.map((r: unknown) =>
+    typeof r === 'string' ? r : (r as Record<string, unknown>)?.code as string ?? ''
+  ).filter(Boolean)
+  if (to.meta.role && !roles.includes(to.meta.role as string)) {
+    return '/dashboard'
+  }
   const hasRequiredAuthority =
     !to.meta.authority ||
-    authorities.includes(to.meta.authority) ||
+    authorities.includes(to.meta.authority as string) ||
     roles.includes('ADMIN') ||
     (to.meta.authority === 'VESSEL_READ' && authorities.includes('SPECIES_READ'))
   if (!hasRequiredAuthority) {

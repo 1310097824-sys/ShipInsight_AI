@@ -1,38 +1,42 @@
-# ShipInsight AI v1.2
+# ShipInsight AI v1.3
 
-ShipInsight AI 是一套面向 AIS 船舶数据的本地化航运智能管理系统。系统提供船舶档案、AIS 数据导入与查询、海上交通图、航运区域、人工 AIS 记录、AI 智能分析、RAG 知识库、知识问答、复核工单和统计报表等功能。
+ShipInsight AI 是一套面向 AIS 船舶交通数据的本地化智能管理系统。系统围绕船舶档案、AIS 记录、海上交通图、航线地图、智能分析、RAG 知识库、知识问答、统计报表、用户权限和审计日志，提供从数据接入、态势查看、风险分析到权限治理的一体化工作台。
 
-当前版本：`v1.2`
+当前版本：`v1.3`
 
-## v1.2 更新重点
+## v1.3 更新重点
 
-- 全系统切换到 AIS 航运主题：原物种、观察、生境相关命名已迁移为船舶档案、人工 AIS 记录、航运区域等业务概念。
-- 数据库迁移推进到 `V28__rename_tables_to_ais_theme.sql`，完成核心表名和权限语义的航运化改造。
-- AIS 记录能力增强：支持 ClickHouse 明细查询、地图快照、单船轨迹、导入进度、批量更新、批量删除、数据集日期统计、风险摘要和导入者排行。
-- 海上交通图升级为 MarineTraffic 风格页面，支持最新船位、MMSI/船名搜索、单船历史轨迹和按数据集日期切换。
-- AI 分析和 AI 报告适配 AIS 指标，报告导出同步覆盖风险等级、运营状态、船型分布、AIS 趋势和航运区域统计。
-- 用户与权限体系适配航运业务，新增验证码、注册审核、个人中心和审计记录相关能力。
-- RAG 知识库继续使用 Qdrant + Ollama embedding，支持文档管理、分块、索引、检索测试和 AI 助手引用。
-- 修复 Lombok 编译配置，后端显式使用 `lombok.version=1.18.34` 作为注解处理器。
+- 新增角色管理模块，仅 `ADMIN` 系统管理员角色可见和可访问，支持角色分页查询、创建、编辑、删除和权限分配。
+- 修复普通用户进入系统后反复弹出“没有权限访问该资源”的问题，前端菜单、路由守卫和页面数据加载按用户权限降级展示。
+- 优化用户权限体系，确保管理员账号拥有 `ADMIN` 角色和 `USER_ADMIN` 权限，角色管理与用户管理入口保持一致。
+- 优化系统主界面、船舶档案、AIS 记录、航线地图、态势总览等页面视觉风格和交互体验。
+- 新增 AIS 示例数据迁移脚本，便于空库初始化后直接体验船舶档案、人工 AIS 记录、航运区域和地图模块。
+- 重写 Flyway 一键迁移脚本，支持三类数据库状态：
+  - 空 MySQL 且没有 `gsmv` 库：自动创建数据库并从 `V1` 开始建表。
+  - 已有 `gsmv` 且有 Flyway 历史：只补跑未执行的新迁移。
+  - 已有表但没有 Flyway 历史：自动清空 schema 后按迁移脚本重建。
+- 优化一键启动脚本的 API Key 注入逻辑，支持启动时填写百炼、DeepSeek、百度地图等密钥，也兼容系统环境变量。
 
 ## 功能模块
 
 | 模块 | 说明 |
 | --- | --- |
 | 态势总览 | 展示船舶、AIS、航运区域、风险、天气和关键统计指标。 |
-| 船舶档案 | 管理船名、MMSI、IMO、呼号、船型、船旗、运营方、风险等级、航行状态和版本历史。 |
+| 船舶档案 | 管理船名、MMSI、IMO、呼号、船型、船旗、运营方、风险等级、运行状态和版本历史。 |
 | AIS 记录 | 基于 ClickHouse 保存 AIS 明细，支持导入、分页查询、地图快照、轨迹查询和批量操作。 |
-| 海上交通图 | MarineTraffic 风格地图，展示最新船位、船舶详情、搜索和单船历史轨迹。 |
-| 人工 AIS 记录 | 手动录入和维护 AIS 观测记录，支持关联船舶档案和版本回溯。 |
-| 航运区域 | 管理港口、航道、锚地等区域信息。 |
-| 航线地图 | 基于 Leaflet 展示 AIS 点位、航线和空间分布。 |
+| 海上交通图 | MarineTraffic 风格地图，展示最新船位、船舶详情、MMSI/船名搜索和单船历史轨迹。 |
+| 航线地图 | 基于 Leaflet 展示 AIS 点位、航线轨迹和空间分布。 |
+| 人工 AIS 记录 | 手动录入和维护 AIS 观察记录，支持关联船舶档案和版本回溯。 |
+| 航运区域 | 管理港口、航道、锚地、近海水域等区域信息。 |
 | 智能分析 | 集成大模型、RAG、业务数据和对话历史，提供自然语言分析能力。 |
 | 分析报告 | 生成、查看和导出 AI 辅助分析报告。 |
 | 异常复核 | 对低置信度或疑似异常的 AI 结果进行人工复核和工单流转。 |
-| RAG 知识库 | 管理知识来源、文档、分块、索引任务和检索测试。 |
+| AIS 知识库 | 管理知识来源、文档、分块、索引任务和检索测试。 |
 | 知识问答 | 支持题库练习、随机练习、自动判分、答题记录和 AI 出题入库。 |
-| 用户权限 | 登录、注册、验证码、注册审核、角色权限、个人中心和审计日志。 |
 | 统计报表 | 输出风险、运营状态、船型、AIS 趋势和航运区域统计，支持 Excel/PDF 导出。 |
+| 用户管理 | 管理用户、注册审核、账号状态、角色分配和个人资料。 |
+| 角色管理 | 仅系统管理员可见，维护角色和权限绑定。 |
+| 审计日志 | 记录关键操作，支持系统运行和权限审计。 |
 
 ## 技术栈
 
@@ -59,9 +63,13 @@ ShipInsight_AI/
 |-- scripts/                         # 根目录辅助脚本
 |-- system/
 |   |-- pom.xml                       # 后端 Maven 配置
-|   |-- start-gsmv.cmd                # 一键启动
-|   |-- stop-gsmv.cmd                 # 停止服务
-|   |-- scripts/                      # 启动、ClickHouse、Flyway 等脚本
+|   |-- start-gsmv.cmd                # 一键启动脚本
+|   |-- stop-gsmv.cmd                 # 停止脚本
+|   |-- scripts/
+|   |   |-- setup-flyway.cmd          # Flyway 一键建库/迁移脚本
+|   |   |-- start-clickhouse.cmd      # ClickHouse 启动脚本
+|   |   |-- start-gsmv.ps1            # 一键启动核心逻辑
+|   |   `-- gsmv-api-key-prompt.ps1   # API Key 输入窗口
 |   |-- src/main/java/com/gsmv/
 |   |   |-- ais/                      # AIS 导入、查询、地图、轨迹和统计
 |   |   |-- ai/                       # AI 助手、RAG、AI 报告、复核工单
@@ -71,16 +79,15 @@ ShipInsight_AI/
 |   |   |-- config/                   # 安全、JWT、存储等配置
 |   |   |-- ecosystem/                # 航运区域
 |   |   |-- observation/              # 人工 AIS 记录
-|   |   |-- quiz/                     # 知识问答、AI 出题、天气解释
+|   |   |-- quiz/                     # 知识问答、AI 出题、天气解读
 |   |   |-- report/                   # 统计报表与导出
-|   |   |-- species/                  # 船型分类与兼容命名模块
-|   |   |-- user/                     # 用户和角色权限
+|   |   |-- user/                     # 用户、角色和权限
 |   |   |-- vessel/                   # 船舶档案
 |   |   |-- versioning/               # 实体版本历史
 |   |   `-- media/                    # 媒体文件
 |   |-- src/main/resources/
 |   |   |-- application.yml
-|   |   `-- db/migration/             # Flyway 迁移脚本
+|   |   `-- db/migration/             # Flyway 迁移脚本，当前到 V30
 |   |-- src/test/java/com/gsmv/       # 后端测试
 |   `-- frontend/                     # Vue 前端
 |       |-- package.json
@@ -111,9 +118,38 @@ ShipInsight_AI/
 | Docker Desktop | 用于运行 ClickHouse 和 Qdrant |
 | Ollama | 可选，用于本地 embedding 模型 |
 
-## 数据服务准备
+## 数据库初始化
 
-### MySQL
+### 推荐方式：一键 Flyway 脚本
+
+```powershell
+cd D:\ShipInsight_AI\system
+.\scripts\setup-flyway.cmd
+```
+
+该脚本会自动检测 Java、MySQL 和 Maven Wrapper，并执行 Flyway 迁移。默认数据库配置：
+
+| 配置 | 默认值 |
+| --- | --- |
+| Host | `localhost` |
+| Port | `3306` |
+| Database | `gsmv` |
+| Username | `root` |
+| Password | `123456` |
+
+脚本对不同数据库状态的处理：
+
+| 数据库状态 | 处理方式 |
+| --- | --- |
+| MySQL 已启动，但没有 `gsmv` 库 | 使用 `createDatabaseIfNotExist=true` 自动建库并执行全部迁移。 |
+| `gsmv` 已存在，且有 `flyway_schema_history` | 执行 `flyway:migrate`，只补跑新版本迁移。 |
+| `gsmv` 已有业务表，但没有 Flyway 历史 | 自动执行 `flyway:clean flyway:migrate`，清空 schema 后重建。 |
+
+注意：第三种情况会清空 `gsmv` 中已有对象，这是为了把无历史的旧库重建为标准 Flyway 管理库。
+
+### 手动建库
+
+也可以先手动创建数据库：
 
 ```sql
 CREATE DATABASE IF NOT EXISTS gsmv
@@ -121,7 +157,13 @@ CREATE DATABASE IF NOT EXISTS gsmv
   DEFAULT COLLATE utf8mb4_unicode_ci;
 ```
 
-默认连接配置位于 `system/src/main/resources/application.yml`：
+然后启动后端，系统会自动执行 `system/src/main/resources/db/migration` 下的迁移脚本。
+
+## 数据服务
+
+### MySQL
+
+默认配置位于 `system/src/main/resources/application.yml`：
 
 ```yaml
 spring:
@@ -129,13 +171,6 @@ spring:
     url: jdbc:mysql://localhost:3306/gsmv?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: 123456
-```
-
-后端启动时会自动执行 `system/src/main/resources/db/migration` 下的 Flyway 脚本。也可以手动执行：
-
-```powershell
-cd D:\ShipInsight_AI\system
-.\scripts\setup-flyway.cmd
 ```
 
 ### ClickHouse
@@ -158,23 +193,13 @@ cd D:\ShipInsight_AI\system
 .\scripts\start-clickhouse.cmd
 ```
 
-也可以直接使用 Docker：
-
-```powershell
-docker run -d --name shipinsight-clickhouse `
-  -p 8123:8123 -p 9000:9000 `
-  -e CLICKHOUSE_PASSWORD=123456 `
-  -v D:\ShipInsight_AI\clickhouse-data:/var/lib/clickhouse `
-  clickhouse/clickhouse-server:25.8-alpine
-```
-
 连接检查：
 
 ```powershell
 Invoke-RestMethod "http://localhost:8123/?query=SELECT%201"
 ```
 
-### Qdrant 与 Ollama
+### Qdrant 和 Ollama
 
 ```powershell
 docker run -d --name gsmv-qdrant -p 6333:6333 qdrant/qdrant
@@ -191,22 +216,26 @@ ollama serve
 | Embedding 模型 | `bge-m3` |
 | Embedding 维度 | `1024` |
 
-## 密钥配置
+## API Key 配置
 
-建议通过环境变量注入密钥，不要提交真实密钥。
+建议通过环境变量注入密钥，不要提交真实密钥：
 
 ```powershell
 setx BAILIAN_API_KEY "your-bailian-key"
+setx DASHSCOPE_API_KEY "your-dashscope-key"
 setx DEEPSEEK_API_KEY "your-deepseek-key"
 setx BAIDU_MAP_AK "your-baidu-map-ak"
 ```
 
-一键启动脚本也会弹出密钥输入窗口。窗口中输入的密钥只在本次启动进程内生效，不会写入磁盘。
+一键启动脚本也会弹出 API Key 输入窗口。窗口中输入的密钥只在本次启动进程内生效，不会写入磁盘。
 
 | 环境变量 | 说明 |
 | --- | --- |
 | `BAILIAN_API_KEY` | 阿里云百炼 API Key，兼容 OpenAI 格式 |
+| `DASHSCOPE_API_KEY` | 阿里云 DashScope API Key，百炼兼容字段 |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | DeepSeek 或兼容 OpenAI 接口地址 |
+| `DEEPSEEK_CHAT_MODEL` | 对话模型名称 |
 | `BAIDU_MAP_AK` | 百度地图 AK，用于天气查询 |
 | `QDRANT_URL` | Qdrant 服务地址 |
 | `OLLAMA_BASE_URL` | Ollama 服务地址 |
@@ -260,6 +289,23 @@ npm install
 npm run dev
 ```
 
+## 权限说明
+
+系统使用角色和权限组合控制菜单、路由和接口访问。
+
+| 角色/权限 | 说明 |
+| --- | --- |
+| `ADMIN` | 系统管理员角色，默认拥有所有页面访问能力，并且唯一可见角色管理模块。 |
+| `USER_ADMIN` | 用户管理权限，可访问用户管理相关能力。 |
+| `VESSEL_READ` | 查看船舶档案。 |
+| `OBS_READ` | 查看 AIS 记录、航线地图和海上交通图。 |
+| `REPORT_READ` | 查看态势总览、分析报告和统计报表。 |
+| `RAG_READ` | 查看 AIS 知识库。 |
+| `QUIZ_READ` / `QUIZ_WRITE` | 查看或维护知识问答题库。 |
+| `AUDIT_READ` | 查看审计日志。 |
+
+前端会根据当前用户的角色和权限动态隐藏不可访问菜单；后端接口仍会进行权限校验。
+
 ## 构建与验证
 
 前端构建：
@@ -283,7 +329,27 @@ cd D:\ShipInsight_AI\system
 .\mvnw.cmd test
 ```
 
+Flyway 状态检查：
+
+```powershell
+cd D:\ShipInsight_AI\system
+.\mvnw.cmd flyway:info -DskipTests
+```
+
 ## 核心 API 概览
+
+### 船舶档案
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/vessels` | 分页查询船舶 |
+| `GET` | `/api/v1/vessels/{id}` | 查看船舶详情 |
+| `POST` | `/api/v1/vessels` | 新增船舶 |
+| `PUT` | `/api/v1/vessels/{id}` | 修改船舶 |
+| `DELETE` | `/api/v1/vessels/{id}` | 归档船舶 |
+| `GET` | `/api/v1/vessels/types` | 查询船型选项 |
+| `GET` | `/api/v1/vessels/{id}/versions` | 查询版本历史 |
+| `POST` | `/api/v1/vessels/{id}/versions/{versionId}/rollback` | 回滚到指定版本 |
 
 ### AIS 记录
 
@@ -300,19 +366,6 @@ cd D:\ShipInsight_AI\system
 | `GET` | `/api/v1/ais-records/risk-summary` | 查询风险摘要 |
 | `GET` | `/api/v1/ais-records/importer-ranking` | 查询导入者排行 |
 
-### 船舶档案
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/v1/vessels` | 分页查询船舶 |
-| `GET` | `/api/v1/vessels/{id}` | 查看船舶详情 |
-| `POST` | `/api/v1/vessels` | 新增船舶 |
-| `PUT` | `/api/v1/vessels/{id}` | 修改船舶 |
-| `DELETE` | `/api/v1/vessels/{id}` | 归档船舶 |
-| `GET` | `/api/v1/vessels/types` | 查询船型选项 |
-| `GET` | `/api/v1/vessels/{id}/versions` | 查询版本历史 |
-| `POST` | `/api/v1/vessels/{id}/versions/{versionId}/rollback` | 回滚到指定版本 |
-
 ### AI 与 RAG
 
 | 方法 | 路径 | 说明 |
@@ -327,47 +380,37 @@ cd D:\ShipInsight_AI\system
 | `POST` | `/api/v1/ai/reports/generate` | 生成 AI 报告 |
 | `GET` | `/api/v1/ai/review-tickets` | 查询复核工单 |
 
-### 知识问答
+### 用户、角色和审计
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/login` | 登录 |
+| `POST` | `/api/v1/auth/register` | 注册 |
+| `GET` | `/api/v1/users` | 查询用户 |
+| `GET` | `/api/v1/roles` | 查询角色，仅管理员 |
+| `GET` | `/api/v1/roles/permissions` | 查询权限选项，仅管理员 |
+| `POST` | `/api/v1/roles` | 创建角色，仅管理员 |
+| `PUT` | `/api/v1/roles/{id}` | 更新角色，仅管理员 |
+| `DELETE` | `/api/v1/roles/{id}` | 删除角色，仅管理员 |
+| `GET` | `/api/v1/audits` | 查询审计日志 |
+
+### 知识问答和报表
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/v1/quiz/questions` | 查询题目 |
 | `POST` | `/api/v1/quiz/questions` | 新增题目 |
-| `PUT` | `/api/v1/quiz/questions/{id}` | 修改题目 |
-| `DELETE` | `/api/v1/quiz/questions/{id}` | 删除题目 |
 | `POST` | `/api/v1/quiz/submit` | 提交答案并判分 |
 | `GET` | `/api/v1/quiz/records` | 查询答题记录 |
 | `POST` | `/api/v1/quiz/ai/chat` | AI 知识助手对话 |
 | `POST` | `/api/v1/quiz/ai/generate` | AI 出题入库 |
-| `GET` | `/api/v1/quiz/ai/weather/interpret` | 查询天气并生成出海建议 |
-
-### 统计报表
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
 | `GET` | `/api/v1/reports/summary` | 仪表盘摘要 |
-| `GET` | `/api/v1/reports/risk-level` | 风险等级分布 |
-| `GET` | `/api/v1/reports/operational-status` | 运营状态分布 |
-| `GET` | `/api/v1/reports/vessel-type-distribution` | 船型分布 |
-| `GET` | `/api/v1/reports/ais-record-trend` | AIS 记录趋势 |
-| `GET` | `/api/v1/reports/shipping-zone-stats` | 航运区域统计 |
 | `GET` | `/api/v1/reports/export/excel` | 导出 Excel |
 | `GET` | `/api/v1/reports/export/pdf` | 导出 PDF |
 
-### 其他模块
-
-| 模块 | 基础路径 |
-| --- | --- |
-| 认证 | `/api/v1/auth` |
-| 用户管理 | `/api/v1/users` |
-| 人工 AIS 记录 | `/api/v1/ais-records-manual` |
-| 航运区域 | `/api/v1/shipping-zones` |
-| 审计日志 | `/api/v1/audits` |
-| 媒体文件 | `/api/v1/media` |
-
 ## AIS 数据使用说明
 
-1. 启动 ClickHouse、MySQL 和后端服务。
+1. 启动 MySQL、ClickHouse 和后端服务。
 2. 打开前端 `http://localhost:5173`，使用管理员账号登录。
 3. 进入 AIS 记录页面，导入 `.csv`、`.gz`、`.tgz`、`.zst` 等格式的数据文件。
 4. 导入时可选择只导入前 N 条，也可以全量导入，并在页面查看实时进度。
@@ -376,7 +419,7 @@ cd D:\ShipInsight_AI\system
 
 ## GPX 转 AIS CSV
 
-仓库提供 GPX 轨迹转 AIS CSV 的辅助脚本，便于把移动端或 GPS 轨迹快速导入系统。
+仓库提供 GPX 轨迹转 AIS CSV 的辅助脚本，便于把移动端或 GPS 轨迹快速导入系统：
 
 ```powershell
 python D:\ShipInsight_AI\scripts\gpx_to_ais_csv.py D:\ShipInsight_AI\handle_DATA\20260624.gpx `
@@ -418,6 +461,7 @@ git status --short
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| `v1.3` | 2026-06-29 | 新增角色管理模块、修复普通用户权限弹窗、优化系统界面和权限路由、补充 AIS 示例数据、增强 Flyway 一键建库/迁移脚本，并重写 README。 |
 | `v1.2` | 2026-06-26 | AIS 主题重构、V28 表迁移、AIS 高级统计、海上交通图升级、AI 报告适配、权限体系调整和 README 重写。 |
 | `v1.1.2` | 2026-06-24 | 新增 AI 知识助手、天气模块、百度地图天气 API、AI 出题和知识问答样式优化。 |
 | `v1.1.1` | 2026-06-22 | 新增知识问答模块、题库练习、填空题样式修复和航线地图路径调整。 |

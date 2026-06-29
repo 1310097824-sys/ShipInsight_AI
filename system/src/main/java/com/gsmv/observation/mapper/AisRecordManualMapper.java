@@ -197,8 +197,9 @@ public interface AisRecordManualMapper {
     @Select("""
             SELECT
               os.vessel_id,
-              v.vessel_name AS display_name,
-              v.vessel_name AS profile_name,
+              v.vessel_name,
+              v.mmsi,
+              v.imo,
               v.status,
               os.count_estimated,
               os.behavior,

@@ -29,6 +29,15 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => Boolean(token.value))
   const authorities = computed(() => profile.value?.authorities ?? [])
 
+  /** 统一提取角色代码，兼容 roles 为 string[] 或 {code:string}[] 两种格式 */
+  const roleCodes = computed(() => {
+    const raw = profile.value?.roles
+    if (!Array.isArray(raw)) return []
+    return raw.map((r: unknown) =>
+      typeof r === 'string' ? r : ((r as Record<string, unknown>)?.code as string) ?? ''
+    ).filter(Boolean)
+  })
+
   function persistProfile(nextProfile: AuthProfile | null) {
     const normalizedProfile = nextProfile ? normalizeProfile(nextProfile) : null
     profile.value = normalizedProfile
@@ -73,6 +82,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     isAuthenticated,
     authorities,
+    roleCodes,
     performLogin,
     patchProfile,
     logout,

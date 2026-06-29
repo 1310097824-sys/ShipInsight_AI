@@ -554,8 +554,8 @@ const gpxConvertForm = reactive({
   includeNonGps: false,
 })
 
-const canWrite = computed(() => authStore.authorities.includes('OBS_WRITE'))
-const canCreateVessel = computed(() => authStore.authorities.includes('VESSEL_WRITE') || authStore.profile?.roles.includes('ADMIN'))
+const canWrite = computed(() => (authStore.authorities || []).includes('OBS_WRITE'))
+const canCreateVessel = computed(() => (authStore.authorities || []).includes('VESSEL_WRITE') || authStore.roleCodes.includes('ADMIN'))
 const editDialogTitle = computed(() => (editScope.value === 'matched' ? '批量修改查询结果' : '批量修改选中记录'))
 const activeFilterText = computed(() => {
   const parts: string[] = []

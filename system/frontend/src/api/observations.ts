@@ -9,7 +9,7 @@ import type {
 } from '@/types/gsmv'
 
 export function fetchManualRecords(params: {
-  shippingZoneId?: number
+  ecosystemId?: number
   keyword?: string
   observedFrom?: string
   observedTo?: string
@@ -32,7 +32,7 @@ export async function fetchObservations(params: {
   size: number
 }) {
   const pageData = await fetchManualRecords({
-    shippingZoneId: params.ecosystemId,
+    ecosystemId: params.ecosystemId,
     keyword: params.keyword,
     observedFrom: params.observedFrom,
     observedTo: params.observedTo,
@@ -72,21 +72,28 @@ export function deleteManualRecord(id: number) {
 function toObservationView(record: AisRecordManualView): ObservationView {
   return {
     ...record,
-    ecosystemId: record.shippingZoneId,
-    ecosystemName: record.shippingZoneName,
-    observerUserId: record.recorderUserId,
-    observerName: record.recorderName,
-    observedAt: record.recordedAt,
-    envJson: record.environmentJson,
+    ecosystemId: record.ecosystemId ?? record.shippingZoneId,
+    ecosystemName: record.ecosystemName ?? record.shippingZoneName,
+    observerUserId: record.observerUserId ?? record.recorderUserId,
+    observerName: record.observerName ?? record.recorderName,
+    observedAt: record.observedAt ?? record.recordedAt,
+    envJson: record.envJson ?? record.environmentJson,
   }
 }
 
 function toObservationDetailView(record: AisRecordManualDetailView): ObservationDetailView {
+  if (record.speciesItems) {
+    return {
+      ...toObservationView(record),
+      speciesItems: record.speciesItems,
+    }
+  }
+
   return {
     ...toObservationView(record),
-    speciesItems: record.linkedVessels.map((item) => ({
+    speciesItems: (record.linkedVessels ?? []).map((item) => ({
       vesselId: item.vesselId,
-      scientificName: item.displayName,
+      scientificName: item.displayName ?? item.vesselName,
       chineseName: item.vesselName,
       countEstimated: item.countEstimated,
       behavior: item.behavior,

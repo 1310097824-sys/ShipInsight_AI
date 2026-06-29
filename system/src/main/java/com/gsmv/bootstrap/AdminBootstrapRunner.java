@@ -41,24 +41,38 @@ public class AdminBootstrapRunner implements ApplicationRunner {
         if (!adminProperties.enabled()) {
             return;
         }
-        if (userMapper.findByUsername(adminProperties.username()) != null) {
-            return;
-        }
+
         SysRole adminRole = roleMapper.findByCode("ADMIN");
         if (adminRole == null) {
-            log.warn("ADMIN role is missing, skip bootstrap admin creation.");
+            log.warn("ADMIN role is missing, skip bootstrap admin setup.");
             return;
         }
 
-        SysUser user = new SysUser();
-        user.setUsername(adminProperties.username());
-        user.setDisplayName(adminProperties.displayName());
-        user.setPasswordHash(passwordEncoder.encode(adminProperties.bootstrapPassword()));
-        user.setStatus(1);
-        user.setApprovalStatus("APPROVED");
-        user.setReviewedAt(LocalDateTime.now());
-        userMapper.insert(user);
-        roleMapper.insertUserRoles(user.getId(), List.of(adminRole.getId()));
-        log.info("Bootstrap admin created. username={}, password={}", adminProperties.username(), adminProperties.bootstrapPassword());
+        SysUser adminUser = userMapper.findByUsername(adminProperties.username());
+        if (adminUser == null) {
+            // 首次初始化：创建 admin 用户并分配角色
+            SysUser user = new SysUser();
+            user.setUsername(adminProperties.username());
+            user.setDisplayName(adminProperties.displayName());
+            user.setPasswordHash(passwordEncoder.encode(adminProperties.bootstrapPassword()));
+            user.setStatus(1);
+            user.setApprovalStatus("APPROVED");
+            user.setReviewedAt(LocalDateTime.now());
+            userMapper.insert(user);
+            roleMapper.insertUserRoles(user.getId(), List.of(adminRole.getId()));
+            log.info("Bootstrap admin created. username={}, password={}", adminProperties.username(), adminProperties.bootstrapPassword());
+            return;
+        }
+
+        // admin 已存在：确保每次启动都补上可能缺失的 ADMIN 角色
+        List<String> existingRoleCodes = roleMapper.findRoleCodesByUserId(adminUser.getId());
+        if (existingRoleCodes == null || !existingRoleCodes.contains("ADMIN")) {
+            List<Long> existingRoleIds = roleMapper.findRolesByUserId(adminUser.getId())
+                    .stream().map(SysRole::getId).toList();
+            if (!existingRoleIds.contains(adminRole.getId())) {
+                roleMapper.insertUserRoles(adminUser.getId(), List.of(adminRole.getId()));
+                log.info("Bootstrap assigned missing ADMIN role to existing admin user id={}", adminUser.getId());
+            }
+        }
     }
 }

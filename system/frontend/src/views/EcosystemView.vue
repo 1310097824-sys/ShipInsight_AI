@@ -98,7 +98,7 @@ const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const rows = ref<ShippingZone[]>([])
 
-const canWrite = computed(() => authStore.authorities.includes('ECOSYSTEM_WRITE'))
+const canWrite = computed(() => (authStore.authorities || []).includes('ECOSYSTEM_WRITE'))
 
 const query = reactive({
   keyword: '',

@@ -19,7 +19,7 @@
           </div>
           <div class="brand-card__status-item">
             <span>当前身份</span>
-            <strong>{{ authStore.profile?.roles[0] || '访客' }}</strong>
+            <strong>{{ authStore.roleCodes[0] || '访客' }}</strong>
           </div>
         </div>
       </section>
@@ -59,7 +59,7 @@
             </el-avatar>
             <span>个人中心</span>
           </RouterLink>
-          <el-tag type="success" effect="dark">{{ authStore.profile?.roles.join(', ') || '访客' }}</el-tag>
+          <el-tag type="success" effect="dark">{{ authStore.roleCodes.join(', ') || '访客' }}</el-tag>
           <el-button type="primary" plain @click="handleLogout">退出登录</el-button>
         </div>
       </header>
@@ -90,7 +90,6 @@ import {
   ChatDotRound,
   DataAnalysis,
   Document,
-  Finished,
   Histogram,
   MapLocation,
   Notebook,
@@ -111,19 +110,20 @@ const menus = [
   { path: '/vessels', label: '船舶档案', icon: Document, authority: 'VESSEL_READ' },
   { path: '/route-map', label: '航线地图', icon: MapLocation, authority: 'OBS_READ' },
   { path: '/observations', label: 'AIS 记录', icon: Notebook, authority: 'OBS_READ' },
-  { path: '/ai-reviews', label: '异常复核', icon: Finished, authority: 'AI_REVIEW_READ' },
+  // { path: '/ai-reviews', label: '异常复核', icon: Finished, authority: 'AI_REVIEW_READ' },
   { path: '/assistant', label: '智能分析', icon: ChatDotRound },
   { path: '/ai-reports', label: '分析报告', icon: Document, authority: 'REPORT_READ' },
   { path: '/rag-knowledge', label: 'AIS 知识库', icon: Notebook, authority: 'RAG_READ' },
   { path: '/quiz', label: '知识问答', icon: Reading, authority: 'QUIZ_READ' },
   { path: '/reports', label: '统计报表', icon: Histogram, authority: 'REPORT_READ' },
   { path: '/audits', label: '审计日志', icon: Setting, authority: 'AUDIT_READ' },
-  { path: '/users', label: '用户权限', icon: User, authority: 'USER_ADMIN' },
+  { path: '/users', label: '用户管理', icon: User, authority: 'USER_ADMIN' },
+  { path: '/roles', label: '角色管理', icon: Setting, role: 'ADMIN' },
   { path: '/profile', label: '个人中心', icon: User },
 ]
 
 const availableMenus = computed(() =>
-  menus.filter((item) => !item.authority || hasMenuAccess(item.authority)),
+  menus.filter((item) => hasRoleAccess(item.role) && (!item.authority || hasMenuAccess(item.authority))),
 )
 
 const primaryMenus = computed(() =>
@@ -142,10 +142,14 @@ function isMenuActive(path: string) {
 
 function hasMenuAccess(authority: string) {
   return (
-    authStore.authorities.includes(authority) ||
-    authStore.profile?.roles.includes('ADMIN') ||
-    (authority === 'VESSEL_READ' && authStore.authorities.includes('SPECIES_READ'))
+    (authStore.authorities || []).includes(authority) ||
+    authStore.roleCodes.includes('ADMIN') ||
+    (authority === 'VESSEL_READ' && (authStore.authorities || []).includes('SPECIES_READ'))
   )
+}
+
+function hasRoleAccess(role?: string) {
+  return !role || authStore.roleCodes.includes(role)
 }
 
 function handleLogout() {

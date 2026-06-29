@@ -1,9 +1,13 @@
 param(
   [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
   [AllowEmptyString()]
-  [string]$BailianApiKey = '',
+  [string]$BailianApiKey = $(if ($env:BAILIAN_API_KEY) { $env:BAILIAN_API_KEY } else { [Environment]::GetEnvironmentVariable('BAILIAN_API_KEY', 'User') }),
   [AllowEmptyString()]
-  [string]$DeepSeekApiKey = '',
+  [string]$DeepSeekApiKey = $(if ($env:DEEPSEEK_API_KEY) { $env:DEEPSEEK_API_KEY } else { [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User') }),
+  [AllowEmptyString()]
+  [string]$DeepSeekBaseUrl = $(if ($env:DEEPSEEK_BASE_URL) { $env:DEEPSEEK_BASE_URL } else { [Environment]::GetEnvironmentVariable('DEEPSEEK_BASE_URL', 'User') }),
+  [AllowEmptyString()]
+  [string]$DeepSeekChatModel = $(if ($env:DEEPSEEK_CHAT_MODEL) { $env:DEEPSEEK_CHAT_MODEL } else { [Environment]::GetEnvironmentVariable('DEEPSEEK_CHAT_MODEL', 'User') }),
   [AllowEmptyString()]
   [string]$BaiduMapAk = $(if ($env:BAIDU_MAP_AK) { $env:BAIDU_MAP_AK } else { [Environment]::GetEnvironmentVariable('BAIDU_MAP_AK', 'Machine') }),
   [AllowEmptyString()]
@@ -19,6 +23,50 @@ $runDir = Join-Path $rootPath '.gsmv-runtime'
 $logDir = Join-Path $runDir 'logs'
 
 New-Item -ItemType Directory -Force -Path $runDir, $logDir | Out-Null
+
+function Resolve-EnvValue {
+  param(
+    [AllowEmptyString()][string]$CurrentValue,
+    [string[]]$Names
+  )
+
+  if (-not [string]::IsNullOrWhiteSpace($CurrentValue)) {
+    return $CurrentValue.Trim()
+  }
+
+  foreach ($name in $Names) {
+    foreach ($scope in @('Process', 'User', 'Machine')) {
+      $value = [Environment]::GetEnvironmentVariable($name, $scope)
+      if (-not [string]::IsNullOrWhiteSpace($value)) {
+        return $value.Trim()
+      }
+    }
+  }
+
+  return ''
+}
+
+$BailianApiKey = Resolve-EnvValue $BailianApiKey @('BAILIAN_API_KEY', 'DASHSCOPE_API_KEY')
+$DeepSeekApiKey = Resolve-EnvValue $DeepSeekApiKey @('DEEPSEEK_API_KEY')
+$DeepSeekBaseUrl = Resolve-EnvValue $DeepSeekBaseUrl @('DEEPSEEK_BASE_URL')
+$DeepSeekChatModel = Resolve-EnvValue $DeepSeekChatModel @('DEEPSEEK_CHAT_MODEL')
+$BaiduMapAk = Resolve-EnvValue $BaiduMapAk @('BAIDU_MAP_AK')
+$IucnApiToken = Resolve-EnvValue $IucnApiToken @('IUCN_API_TOKEN')
+
+$dashscopeApiKey = Resolve-EnvValue '' @('DASHSCOPE_API_KEY')
+$deepSeekLooksSeparate =
+  -not [string]::IsNullOrWhiteSpace($DeepSeekApiKey) -and
+  ($DeepSeekApiKey -ne $BailianApiKey) -and
+  ($DeepSeekApiKey -ne $dashscopeApiKey)
+
+if ($deepSeekLooksSeparate) {
+  if ([string]::IsNullOrWhiteSpace($DeepSeekBaseUrl)) {
+    $DeepSeekBaseUrl = 'https://api.deepseek.com'
+  }
+  if ([string]::IsNullOrWhiteSpace($DeepSeekChatModel)) {
+    $DeepSeekChatModel = 'deepseek-chat'
+  }
+}
 
 function Stop-ExistingProcessTree {
   param(
@@ -161,12 +209,16 @@ foreach ($logFile in @($backendOut, $backendErr, $frontendOut, $frontendErr)) {
 
 $bailianKeyForRun = ConvertTo-CmdSetValue $BailianApiKey
 $deepSeekKeyForRun = ConvertTo-CmdSetValue $DeepSeekApiKey
+$deepSeekBaseUrlForRun = ConvertTo-CmdSetValue $DeepSeekBaseUrl
+$deepSeekChatModelForRun = ConvertTo-CmdSetValue $DeepSeekChatModel
 $baiduMapAkForRun = ConvertTo-CmdSetValue $BaiduMapAk
 $iucnTokenForRun = ConvertTo-CmdSetValue $IucnApiToken
 $backendEnvCommand = @(
   "set `"BAILIAN_API_KEY=$bailianKeyForRun`"",
   "set `"DASHSCOPE_API_KEY=$bailianKeyForRun`"",
   "set `"DEEPSEEK_API_KEY=$deepSeekKeyForRun`"",
+  "set `"DEEPSEEK_BASE_URL=$deepSeekBaseUrlForRun`"",
+  "set `"DEEPSEEK_CHAT_MODEL=$deepSeekChatModelForRun`"",
   "set `"BAIDU_MAP_AK=$baiduMapAkForRun`"",
   "set `"IUCN_API_TOKEN=$iucnTokenForRun`"",
   "set `"SERVER_PORT=8080`""

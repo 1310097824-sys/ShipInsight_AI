@@ -75,7 +75,8 @@ function addGlobalImageryLayer(map: L.Map) {
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: '&copy; Esri',
     maxNativeZoom: 19,
-    maxZoom: 19,
+    maxZoom: 20,
+    updateWhenZooming: false,
   }).addTo(map)
 
   L.tileLayer(
@@ -83,9 +84,10 @@ function addGlobalImageryLayer(map: L.Map) {
     {
       attribution: '&copy; Esri',
       maxNativeZoom: 19,
-      maxZoom: 19,
+      maxZoom: 20,
       opacity: 0.82,
       pane: 'overlayPane',
+      updateWhenZooming: false,
     },
   ).addTo(map)
 }
@@ -95,7 +97,8 @@ function createAmapVectorLayer() {
     attribution: '&copy; Gaode Maps',
     subdomains: ['1', '2', '3', '4'],
     maxNativeZoom: 18,
-    maxZoom: 18,
+    maxZoom: 20,
+    updateWhenZooming: false,
   })
 }
 
@@ -135,7 +138,9 @@ export function addPreferredTileLayer(map: L.Map) {
       `https://t0.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${tiandituKey}`,
       {
         attribution: '&copy; Tianditu',
-        maxZoom: 18,
+        maxNativeZoom: 18,
+        maxZoom: 20,
+        updateWhenZooming: false,
       },
     ).addTo(map)
 
@@ -143,8 +148,10 @@ export function addPreferredTileLayer(map: L.Map) {
       `https://t0.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${tiandituKey}`,
       {
         attribution: '&copy; Tianditu',
-        maxZoom: 18,
+        maxNativeZoom: 18,
+        maxZoom: 20,
         pane: 'overlayPane',
+        updateWhenZooming: false,
       },
     ).addTo(map)
 

@@ -233,9 +233,9 @@ const sourceItems = computed(() =>
 )
 const canRollback = computed(
   () =>
-    authStore.authorities.includes('VESSEL_WRITE') ||
-    authStore.profile?.roles.includes('ADMIN') ||
-    authStore.authorities.includes('SPECIES_WRITE'),
+    (authStore.authorities || []).includes('VESSEL_WRITE') ||
+    authStore.roleCodes.includes('ADMIN') ||
+    (authStore.authorities || []).includes('SPECIES_WRITE'),
 )
 
 async function loadDetail() {
@@ -388,15 +388,15 @@ function formatMetric(value: number | string | null | undefined, unit: string) {
 
 function riskTagType(value?: string) {
   if (!value) return 'info'
-  if (value.includes('高') || value.includes('重点')) return 'danger'
-  if (value.includes('中') || value.includes('普通')) return 'warning'
+  if ((value || '').includes('高') || (value || '').includes('重点')) return 'danger'
+  if ((value || '').includes('中') || (value || '').includes('普通')) return 'warning'
   return 'success'
 }
 
 function navigationTagType(value?: string) {
   if (!value || value === '未知') return 'info'
-  if (value.includes('异常') || value.includes('失控')) return 'danger'
-  if (value.includes('锚泊') || value.includes('靠泊')) return 'warning'
+  if ((value || '').includes('异常') || (value || '').includes('失控')) return 'danger'
+  if ((value || '').includes('锚泊') || (value || '').includes('靠泊')) return 'warning'
   return 'success'
 }
 

@@ -240,6 +240,7 @@ import {
 import { fetchAllShippingZones } from '@/api/ecosystems'
 import { fetchWeatherInterpret } from '@/api/quiz'
 import ChartPanel from '@/components/ChartPanel.vue'
+import { useAuthStore } from '@/stores/auth'
 import { addPreferredTileLayer, toMapDisplayPoint } from '@/utils/mapProvider'
 import { buildMapPopupCard, createMapMarkerIcon } from '@/utils/mapMarkerTheme'
 import type {
@@ -301,6 +302,7 @@ interface KpiCard {
 
 const MAP_LIMIT = 5000
 const defaultCenter: [number, number] = [21.18, 110.53]
+const authStore = useAuthStore()
 
 const mapModes: Array<{ label: string; value: MapMode }> = [
   { label: '综合态势', value: 'all' },
@@ -403,6 +405,8 @@ const riskSummary = ref<AisRiskSummary>({
 const datasetDateStats = ref<AisDatasetDateStat[]>([])
 const importerStats = ref<AisRankingStat[]>([])
 const shippingZones = ref<ShippingZone[]>([])
+const canReadAis = computed(() => hasAuthority('OBS_READ'))
+const canReadShippingZones = computed(() => hasAuthority('ECOSYSTEM_READ'))
 
 let map: L.Map | null = null
 let markerLayer: L.MarkerClusterGroup | null = null
@@ -922,6 +926,18 @@ function renderMap() {
 async function loadOverview() {
   loading.value = true
   try {
+    if (!canReadAis.value) {
+      datasetDates.value = []
+      records.value = []
+      datasetDateStats.value = []
+      importerStats.value = []
+      riskSummary.value = emptyRiskSummary()
+      shippingZones.value = canReadShippingZones.value ? await fetchAllShippingZones() : []
+      selectedRecordId.value = ''
+      renderMap()
+      return
+    }
+
     const [dates, mapData, dateStats, importers, risk, nodeOptions] = await Promise.all([
       fetchAisDatasetDates(),
       fetchAisMapRecords({
@@ -931,7 +947,7 @@ async function loadOverview() {
       fetchAisDatasetDateStats({}),
       fetchAisImporterStats({ limit: 6 }),
       fetchAisRiskSummary({}),
-      fetchAllShippingZones(),
+      canReadShippingZones.value ? fetchAllShippingZones() : Promise.resolve([]),
     ])
 
     datasetDates.value = dates
@@ -951,10 +967,30 @@ async function loadOverview() {
 
     renderMap()
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '态势总览加载失败')
+    if (!isForbiddenError(error)) {
+      ElMessage.error(error instanceof Error ? error.message : '态势总览加载失败')
+    }
   } finally {
     loading.value = false
   }
+}
+
+function hasAuthority(authority: string) {
+  return (authStore.authorities || []).includes(authority) || authStore.roleCodes.includes('ADMIN')
+}
+
+function emptyRiskSummary(): AisRiskSummary {
+  return {
+    total: 0,
+    lowSpeedCount: 0,
+    stoppedCount: 0,
+    abnormalNoteCount: 0,
+    uniqueVesselCount: 0,
+  }
+}
+
+function isForbiddenError(error: unknown) {
+  return error instanceof Error && /没有权限|403|Forbidden/i.test(error.message)
 }
 
 function resetSelectedDate() {

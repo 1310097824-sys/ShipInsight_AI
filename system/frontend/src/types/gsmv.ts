@@ -35,6 +35,31 @@ export interface RoleOption {
   description: string
 }
 
+export interface PermissionOption {
+  id: number
+  code: string
+  name: string
+  description: string
+}
+
+/** 权限-路由映射，用于角色管理页面的路由权限可视化 */
+export interface PermissionRouteMapping {
+  permission: string
+  label: string
+  route: string
+  category: string
+}
+
+export interface RoleDetail {
+  id: number
+  code: string
+  name: string
+  description: string
+  permissions: PermissionOption[]
+  userCount: number
+  createdAt: string
+}
+
 export interface UserView {
   id: number
   username: string
@@ -188,6 +213,7 @@ export interface AisLinkedVesselView {
   vesselName: string
   mmsi?: string
   imo?: string
+  vesselTypeName?: string
   riskLevel?: string
   navigationStatus?: string
   status: number
@@ -234,16 +260,23 @@ export interface AisRecordManualView {
   recorderUserId: number
   recorderName: string
   recordedAt: string
+  ecosystemId?: number
+  ecosystemName?: string
+  observerUserId?: number
+  observerName?: string
+  observedAt?: string
   locationLat: number
   locationLng: number
   locationName?: string
   environmentJson?: string
+  envJson?: string
   note?: string
   createdAt: string
 }
 
 export interface AisRecordManualDetailView extends AisRecordManualView {
   linkedVessels: AisRecordVesselView[]
+  speciesItems?: ObservationSpeciesView[]
 }
 
 export interface ObservationView extends AisRecordManualView {

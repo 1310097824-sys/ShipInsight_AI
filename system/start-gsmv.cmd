@@ -6,6 +6,8 @@ if "%GSMV_ROOT:~-1%"=="\" set "GSMV_ROOT=%GSMV_ROOT:~0,-1%"
 set "_BAILIAN_BAK=%BAILIAN_API_KEY%"
 set "_DASHSCOPE_BAK=%DASHSCOPE_API_KEY%"
 set "_DEEPSEEK_BAK=%DEEPSEEK_API_KEY%"
+set "_DEEPSEEK_BASE_URL_BAK=%DEEPSEEK_BASE_URL%"
+set "_DEEPSEEK_CHAT_MODEL_BAK=%DEEPSEEK_CHAT_MODEL%"
 set "_BAIDU_BAK=%BAIDU_MAP_AK%"
 
 set "GSMV_KEYS_B64="
@@ -27,9 +29,11 @@ if /I not "%GSMV_SKIP_API_PROMPT%"=="1" (
 if "%BAILIAN_API_KEY%"=="" set "BAILIAN_API_KEY=%_BAILIAN_BAK%"
 if "%DASHSCOPE_API_KEY%"=="" set "DASHSCOPE_API_KEY=%_DASHSCOPE_BAK%"
 if "%DEEPSEEK_API_KEY%"=="" set "DEEPSEEK_API_KEY=%_DEEPSEEK_BAK%"
+if "%DEEPSEEK_BASE_URL%"=="" set "DEEPSEEK_BASE_URL=%_DEEPSEEK_BASE_URL_BAK%"
+if "%DEEPSEEK_CHAT_MODEL%"=="" set "DEEPSEEK_CHAT_MODEL=%_DEEPSEEK_CHAT_MODEL_BAK%"
 if "%BAIDU_MAP_AK%"=="" set "BAIDU_MAP_AK=%_BAIDU_BAK%"
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GSMV_ROOT%\scripts\start-gsmv.ps1" -Root "%GSMV_ROOT%" -BailianApiKey "%BAILIAN_API_KEY%" -DeepSeekApiKey "%DEEPSEEK_API_KEY%" -BaiduMapAk "%BAIDU_MAP_AK%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GSMV_ROOT%\scripts\start-gsmv.ps1" -Root "%GSMV_ROOT%" -BailianApiKey "%BAILIAN_API_KEY%" -DeepSeekApiKey "%DEEPSEEK_API_KEY%" -DeepSeekBaseUrl "%DEEPSEEK_BASE_URL%" -DeepSeekChatModel "%DEEPSEEK_CHAT_MODEL%" -BaiduMapAk "%BAIDU_MAP_AK%"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if not "%EXIT_CODE%"=="0" (

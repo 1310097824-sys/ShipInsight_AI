@@ -158,7 +158,7 @@ import type { QuizRecord } from '@/types/gsmv'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const canManage = computed(() => authStore.authorities.includes('QUIZ_WRITE'))
+const canManage = computed(() => (authStore.authorities || []).includes('QUIZ_WRITE'))
 
 const stats = reactive({ ship: 0, weather: 0, seaArea: 0 })
 const starting = ref(false)
